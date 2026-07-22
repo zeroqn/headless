@@ -1,0 +1,15 @@
+{
+  "owner": "zeroqn",
+  "repo": "headless",
+  "release": {
+    "tag": "main-build",
+    "version": "main-build-initial"
+  },
+  "assets": {
+    "x86_64-linux": {
+      "name": "niri-headless-main-x86_64-linux.tar.gz",
+      "url": "https://github.com/zeroqn/headless/releases/download/main-build/niri-headless-main-x86_64-linux.tar.gz",
+      "hash": "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+    }
+  }
+}
