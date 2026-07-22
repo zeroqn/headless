@@ -97,6 +97,9 @@
           program = "${updateReleaseAssets}/bin/update-release-assets";
         };
 
+        checks.session-package-metadata =
+          assert pkgs.niri.providedSessions == [ "niri" ];
+          pkgs.runCommand "niri-session-package-metadata" { } "touch $out";
         formatter = pkgs.nixfmt;
       }
     )

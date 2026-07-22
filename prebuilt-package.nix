@@ -80,6 +80,8 @@ stdenvNoCC.mkDerivation {
     runHook postInstall
   '';
 
+  passthru.providedSessions = [ "niri" ];
+
   meta = {
     description = "Prebuilt Niri scrollable-tiling Wayland compositor with headless support";
     homepage = "https://github.com/${releaseAsset.owner}/${releaseAsset.repo}/releases/tag/${releaseAsset.tag}";
