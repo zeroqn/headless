@@ -2,14 +2,30 @@
   "owner": "zeroqn",
   "repo": "headless",
   "release": {
-    "tag": "main-build",
-    "version": "main-build-main"
+    "tag": "main-build"
   },
-  "assets": {
-    "x86_64-linux": {
-      "name": "niri-headless-main-x86_64-linux.tar.gz",
-      "url": "https://github.com/zeroqn/headless/releases/download/main-build/niri-headless-main-x86_64-linux.tar.gz",
-      "hash": "sha256-pkruHToV7DGyZ5sqPLVBfew67GxnRlaCM8Khj6471js="
+  "packages": {
+    "niri": {
+      "version": "main-build-main",
+      "revision": "main",
+      "assets": {
+        "x86_64-linux": {
+          "name": "niri-headless-main-x86_64-linux.tar.gz",
+          "url": "https://github.com/zeroqn/headless/releases/download/main-build/niri-headless-main-x86_64-linux.tar.gz",
+          "hash": "sha256-pkruHToV7DGyZ5sqPLVBfew67GxnRlaCM8Khj6471js="
+        }
+      }
+    },
+    "rio": {
+      "version": "0.4.12-d656326",
+      "revision": "d656326020ffe5959e221af7a7d1d8d82a6ab2db",
+      "assets": {
+        "x86_64-linux": {
+          "name": "rio-d656326-x86_64-linux.tar.gz",
+          "url": "https://github.com/zeroqn/headless/releases/download/main-build/rio-d656326-x86_64-linux.tar.gz",
+          "hash": "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+        }
+      }
     }
   }
 }
