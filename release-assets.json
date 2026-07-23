@@ -23,7 +23,7 @@
         "x86_64-linux": {
           "name": "rio-d656326-x86_64-linux.tar.gz",
           "url": "https://github.com/zeroqn/headless/releases/download/main-build/rio-d656326-x86_64-linux.tar.gz",
-          "hash": "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+          "hash": "sha256-5tP1RXfw5u5aYsF/2z6gcIskABE4Z/FMIn12axQrEgU="
         }
       }
     }
