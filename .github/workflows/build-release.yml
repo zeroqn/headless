@@ -9,6 +9,9 @@ on:
 
 permissions:
   contents: write
+  id-token: write
+  attestations: write
+  artifact-metadata: write
 
 concurrency:
   group: niri-headless-main-build
@@ -37,6 +40,17 @@ jobs:
           archive="niri-headless-main-x86_64-linux.tar.gz"
           tar -czf "$archive" -C "$(readlink -f result)" .
           sha256sum "$archive" >"$archive.sha256"
+
+      - name: Attest release archive
+        id: attest
+        uses: actions/attest@v4
+        with:
+          subject-path: niri-headless-main-x86_64-linux.tar.gz
+
+      - name: Prepare attestation release asset
+        run: |
+          cp "${{ steps.attest.outputs.bundle-path }}" \
+            niri-headless-main-x86_64-linux.tar.gz.sigstore.json
 
       - name: Update rolling release tag
         run: |
@@ -75,6 +89,7 @@ jobs:
           files: |
             niri-headless-main-x86_64-linux.tar.gz
             niri-headless-main-x86_64-linux.tar.gz.sha256
+            niri-headless-main-x86_64-linux.tar.gz.sigstore.json
 
       - name: Update release metadata
         env:
@@ -95,3 +110,4 @@ jobs:
           path: |
             niri-headless-main-x86_64-linux.tar.gz
             niri-headless-main-x86_64-linux.tar.gz.sha256
+            niri-headless-main-x86_64-linux.tar.gz.sigstore.json
