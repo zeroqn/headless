@@ -1,5 +1,5 @@
 {
-  description = "Prebuilt Niri headless and Rio release flake";
+  description = "Prebuilt Niri headless, Rio, and Sunshine release flake";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
@@ -57,6 +57,54 @@
           wayland
         ];
 
+      sunshineRuntimeDeps =
+        pkgs: cudaSupport:
+        with pkgs;
+        [
+          at-spi2-core
+          avahi
+          boost
+          cairo
+          curl
+          gdk-pixbuf
+          glib
+          gtk3
+          harfbuzz
+          libappindicator-gtk3
+          libcap
+          libdbusmenu-gtk3
+          libdrm
+          libevdev
+          libglvnd
+          libgbm
+          libICE
+          libnotify
+          libopus
+          libpulseaudio
+          libSM
+          libva
+          libvdpau
+          miniupnpc
+          numactl
+          openssl
+          pango
+          pipewire
+          qt6.qtbase
+          qt6.qtsvg
+          vulkan-loader
+          wayland
+          libx11
+          libxcb
+          libxext
+          libxfixes
+          libxi
+          libxkbcommon
+          libxrandr
+          libxtst
+          zlib
+        ]
+        ++ lib.optionals cudaSupport [ cudaPackages.cuda_cudart ];
+
       mkNiriBinaryPackage =
         pkgs: system:
         pkgs.callPackage ./prebuilt-package.nix {
@@ -81,12 +129,35 @@
           };
         };
 
+      mkSunshineBinaryPackage =
+        pkgs: system: cudaSupport:
+        let
+          packageName = if cudaSupport then "sunshine-cuda" else "sunshine";
+        in
+        pkgs.callPackage ./sunshine/prebuilt-package.nix {
+          runtimeDeps = sunshineRuntimeDeps pkgs cudaSupport;
+          releaseAsset = releaseMeta.packages.${packageName}.assets.${system} // {
+            inherit system;
+            inherit (releaseMeta) owner repo;
+            inherit (releaseMeta.release) tag;
+            inherit (releaseMeta.packages.${packageName}) version;
+          };
+        };
+
+      mkSunshineSourceBuild =
+        pkgs: cudaSupport:
+        pkgs.callPackage ./sunshine/source-package.nix {
+          inherit pkgs cudaSupport;
+        };
+
       overlay =
         final: prev:
         let
           system = prev.stdenv.hostPlatform.system;
           hasNiriBinary = builtins.hasAttr system releaseMeta.packages.niri.assets;
           hasRioBinary = builtins.hasAttr system releaseMeta.packages.rio.assets;
+          hasSunshineBinary = builtins.hasAttr system releaseMeta.packages.sunshine.assets;
+          hasSunshineCudaBinary = builtins.hasAttr system releaseMeta.packages."sunshine-cuda".assets;
         in
         {
           niri-headless-release-build = niri-src.packages.${system}.default.overrideAttrs {
@@ -98,6 +169,8 @@
             };
             rioSource = rio-src;
           };
+          sunshine-headless-release-build = mkSunshineSourceBuild prev false;
+          sunshine-headless-release-build-cuda = mkSunshineSourceBuild prev true;
         }
         // prev.lib.optionalAttrs hasNiriBinary {
           niri = mkNiriBinaryPackage prev system;
@@ -105,6 +178,13 @@
         }
         // prev.lib.optionalAttrs hasRioBinary {
           rio-headless-bin = mkRioBinaryPackage prev system;
+        }
+        // prev.lib.optionalAttrs hasSunshineBinary {
+          sunshine = mkSunshineBinaryPackage prev system false;
+          sunshine-bin = final.sunshine;
+        }
+        // prev.lib.optionalAttrs hasSunshineCudaBinary {
+          sunshine-bin-cuda = mkSunshineBinaryPackage prev system true;
         };
     in
     flake-utils.lib.eachSystem supportedSystems (
@@ -112,6 +192,7 @@
       let
         pkgs = import nixpkgs {
           inherit system;
+          config.allowUnfree = true;
           overlays = [ overlay ];
         };
         updateReleaseAssets = pkgs.writeShellApplication {
@@ -133,8 +214,15 @@
           niri = pkgs.niri;
           niri-headless-bin = pkgs.niri-headless-bin;
           releaseBuild = pkgs.niri-headless-release-build;
+
           rio-bin = pkgs.rio-headless-bin;
           rioReleaseBuild = pkgs.rio-headless-release-build;
+
+          sunshine = pkgs.sunshine;
+          sunshine-bin = pkgs.sunshine-bin;
+          sunshine-bin-cuda = pkgs.sunshine-bin-cuda;
+          sunshineReleaseBuild = pkgs.sunshine-headless-release-build;
+          sunshineReleaseBuildCuda = pkgs.sunshine-headless-release-build-cuda;
         };
 
         apps.update-release-assets = {
@@ -150,14 +238,28 @@
             assert pkgs.rio-headless-bin.meta.mainProgram == "rio";
             assert pkgs.rio != pkgs.rio-headless-bin;
             pkgs.runCommand "rio-package-metadata" { } "touch $out";
+          sunshine-package-metadata =
+            assert pkgs.sunshine == pkgs.sunshine-bin;
+            assert pkgs.sunshine != pkgs.sunshine-bin-cuda;
+            assert pkgs.sunshine.meta.mainProgram == "sunshine";
+            pkgs.runCommand "sunshine-package-metadata" { } "touch $out";
         };
         formatter = pkgs.nixfmt;
       }
     )
     // {
       overlays.default = overlay;
-      nixosModules.default = { ... }: {
-        nixpkgs.overlays = [ self.overlays.default ];
-      };
+      nixosModules.default =
+        {
+          config,
+          lib,
+          ...
+        }:
+        {
+          nixpkgs.overlays = [ self.overlays.default ];
+          security.wrappers.sunshine.capabilities = lib.mkIf (
+            config.services.sunshine.enable && config.services.sunshine.capSysAdmin
+          ) (lib.mkForce "cap_sys_admin,cap_sys_nice+p");
+        };
     };
 }

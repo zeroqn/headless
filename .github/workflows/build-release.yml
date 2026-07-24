@@ -1,4 +1,4 @@
-name: Build Niri and Rio release assets
+name: Build and publish Headless release assets
 
 on:
   push:
@@ -13,12 +13,8 @@ permissions:
   attestations: write
   artifact-metadata: write
 
-concurrency:
-  group: niri-headless-main-build
-  cancel-in-progress: true
-
 jobs:
-  build-and-upload:
+  build-niri-rio:
     runs-on: ubuntu-latest
 
     steps:
@@ -37,7 +33,7 @@ jobs:
       - name: Build Rio
         run: nix build .#rioReleaseBuild --out-link result-rio --print-build-logs
 
-      - name: Package build outputs
+      - name: Package Niri and Rio
         run: |
           set -euo pipefail
 
@@ -58,7 +54,7 @@ jobs:
           test -f result-rio/share/man/man5/rio.5
           test -f result-rio/share/man/man5/rio-bindings.5
 
-      - name: Attest release archives
+      - name: Attest Niri and Rio archives
         id: attest
         uses: actions/attest@v4
         with:
@@ -66,10 +62,140 @@ jobs:
             niri-headless-main-x86_64-linux.tar.gz
             rio-d656326-x86_64-linux.tar.gz
 
-      - name: Prepare attestation release asset
+      - name: Prepare Niri and Rio attestation asset
         run: |
           cp "${{ steps.attest.outputs.bundle-path }}" \
-            main-build-x86_64-linux.sigstore.json
+            niri-rio-main-build-x86_64-linux.sigstore.json
+
+      - name: Upload Niri and Rio publication inputs
+        uses: actions/upload-artifact@v4
+        with:
+          name: publish-niri-rio
+          path: |
+            niri-headless-main-x86_64-linux.tar.gz
+            niri-headless-main-x86_64-linux.tar.gz.sha256
+            rio-d656326-x86_64-linux.tar.gz
+            rio-d656326-x86_64-linux.tar.gz.sha256
+            niri-rio-main-build-x86_64-linux.sigstore.json
+
+  build-sunshine:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Nix
+        uses: DeterminateSystems/nix-installer-action@main
+
+      - name: Enable Nix build cache
+        uses: DeterminateSystems/magic-nix-cache-action@main
+
+      - name: Build Sunshine packages
+        run: |
+          nix build .#sunshineReleaseBuild \
+            --out-link result-sunshine \
+            --print-build-logs
+          nix build .#sunshineReleaseBuildCuda \
+            --out-link result-sunshine-cuda \
+            --print-build-logs
+
+      - name: Package Sunshine outputs
+        run: |
+          set -euo pipefail
+
+          sunshine_archive="sunshine-main-x86_64-linux.tar.gz"
+          tar -czf "$sunshine_archive" -C "$(readlink -f result-sunshine)" .
+          sha256sum "$sunshine_archive" >"$sunshine_archive.sha256"
+
+          cuda_archive="sunshine-main-cuda-x86_64-linux.tar.gz"
+          tar -czf "$cuda_archive" -C "$(readlink -f result-sunshine-cuda)" .
+          sha256sum "$cuda_archive" >"$cuda_archive.sha256"
+
+          for result in result-sunshine result-sunshine-cuda; do
+            test -x "$result/bin/sunshine"
+            test -d "$result/assets"
+            test -f "$result/share/applications/dev.lizardbyte.app.Sunshine.desktop"
+            test -f "$result/share/systemd/user/app-dev.lizardbyte.app.Sunshine.service"
+            test -f "$result/lib/udev/rules.d/60-sunshine.rules"
+            test -f "$result/lib/modules-load.d/60-sunshine.conf"
+          done
+
+      - name: Attest Sunshine archives
+        id: attest
+        uses: actions/attest@v4
+        with:
+          subject-path: |
+            sunshine-main-x86_64-linux.tar.gz
+            sunshine-main-cuda-x86_64-linux.tar.gz
+
+      - name: Prepare Sunshine attestation asset
+        run: |
+          cp "${{ steps.attest.outputs.bundle-path }}" \
+            sunshine-main-build-x86_64-linux.sigstore.json
+
+      - name: Upload Sunshine publication inputs
+        uses: actions/upload-artifact@v4
+        with:
+          name: publish-sunshine
+          path: |
+            sunshine-main-x86_64-linux.tar.gz
+            sunshine-main-x86_64-linux.tar.gz.sha256
+            sunshine-main-cuda-x86_64-linux.tar.gz
+            sunshine-main-cuda-x86_64-linux.tar.gz.sha256
+            sunshine-main-build-x86_64-linux.sigstore.json
+
+  publish:
+    needs:
+      - build-niri-rio
+      - build-sunshine
+    if: always() && (needs.build-niri-rio.result == 'success' || needs.build-sunshine.result == 'success')
+    runs-on: ubuntu-latest
+    concurrency:
+      group: headless-main-build-publisher
+      cancel-in-progress: false
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Nix
+        uses: DeterminateSystems/nix-installer-action@main
+
+      - name: Download Niri and Rio publication inputs
+        if: needs.build-niri-rio.result == 'success'
+        uses: actions/download-artifact@v4
+        with:
+          name: publish-niri-rio
+          path: publish
+
+      - name: Download Sunshine publication inputs
+        if: needs.build-sunshine.result == 'success'
+        uses: actions/download-artifact@v4
+        with:
+          name: publish-sunshine
+          path: publish
+
+      - name: Select published package groups
+        env:
+          NIRI_RIO_RESULT: ${{ needs.build-niri-rio.result }}
+          SUNSHINE_RESULT: ${{ needs.build-sunshine.result }}
+        run: |
+          set -euo pipefail
+          groups=()
+          if [[ "$NIRI_RIO_RESULT" == success ]]; then
+            groups+=(niri-rio)
+          fi
+          if [[ "$SUNSHINE_RESULT" == success ]]; then
+            groups+=(sunshine)
+          fi
+          IFS=,
+          echo "PUBLISH_GROUPS=${groups[*]}" >>"$GITHUB_ENV"
+
+      - name: Confirm workflow commit is current main
+        run: |
+          git fetch origin main
+          test "$(git rev-parse HEAD)" = "$(git rev-parse origin/main)"
 
       - name: Update rolling release tag
         run: |
@@ -78,39 +204,14 @@ jobs:
           git tag -fa main-build -m 'Rolling release for main branch'
           git push origin refs/tags/main-build --force
 
-      - name: Reset rolling release
-        uses: actions/github-script@v7
-        with:
-          script: |
-            try {
-              const release = await github.rest.repos.getReleaseByTag({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                tag: "main-build",
-              });
-              await github.rest.repos.deleteRelease({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                release_id: release.data.id,
-              });
-            } catch (error) {
-              if (error.status !== 404) {
-                throw error;
-              }
-            }
-
-      - name: Upload release assets
+      - name: Upload successful release assets
         uses: softprops/action-gh-release@v2
         with:
           tag_name: main-build
           name: Main branch build
           prerelease: true
-          files: |
-            niri-headless-main-x86_64-linux.tar.gz
-            niri-headless-main-x86_64-linux.tar.gz.sha256
-            rio-d656326-x86_64-linux.tar.gz
-            rio-d656326-x86_64-linux.tar.gz.sha256
-            main-build-x86_64-linux.sigstore.json
+          overwrite_files: true
+          files: publish/*
 
       - name: Update release metadata
         env:
@@ -124,13 +225,8 @@ jobs:
           git commit -m "chore: update prebuilt release metadata"
           git push origin HEAD:main
 
-      - name: Upload workflow artifacts
+      - name: Upload combined workflow artifacts
         uses: actions/upload-artifact@v4
         with:
           name: headless-x86_64-linux
-          path: |
-            niri-headless-main-x86_64-linux.tar.gz
-            niri-headless-main-x86_64-linux.tar.gz.sha256
-            rio-d656326-x86_64-linux.tar.gz
-            rio-d656326-x86_64-linux.tar.gz.sha256
-            main-build-x86_64-linux.sigstore.json
+          path: publish/*

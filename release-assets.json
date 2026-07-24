@@ -26,6 +26,28 @@
           "hash": "sha256-5tP1RXfw5u5aYsF/2z6gcIskABE4Z/FMIn12axQrEgU="
         }
       }
+    },
+    "sunshine": {
+      "version": "2026.07.15.vulkan",
+      "revision": "9d2409f71b60f1812f482e6dd807dc52e2f72fe7",
+      "assets": {
+        "x86_64-linux": {
+          "name": "sunshine-main-x86_64-linux.tar.gz",
+          "url": "https://github.com/zeroqn/sunshine/releases/download/main-build/sunshine-main-x86_64-linux.tar.gz",
+          "hash": "sha256-j5icqVJMJezI6Y260VwfSgDfUof4HY5dhp8rytF4Vn8="
+        }
+      }
+    },
+    "sunshine-cuda": {
+      "version": "2026.07.15.vulkan",
+      "revision": "9d2409f71b60f1812f482e6dd807dc52e2f72fe7",
+      "assets": {
+        "x86_64-linux": {
+          "name": "sunshine-main-cuda-x86_64-linux.tar.gz",
+          "url": "https://github.com/zeroqn/sunshine/releases/download/main-build/sunshine-main-cuda-x86_64-linux.tar.gz",
+          "hash": "sha256-SJlh8Ds1o7FRkUChl8ttc7x8CFZvDcoGxZbrRNmdU0g="
+        }
+      }
     }
   }
 }
