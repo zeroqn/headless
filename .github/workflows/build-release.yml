@@ -145,11 +145,59 @@ jobs:
             sunshine-main-cuda-x86_64-linux.tar.gz.sha256
             sunshine-main-build-x86_64-linux.sigstore.json
 
+  build-moonlight:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Nix
+        uses: DeterminateSystems/nix-installer-action@main
+
+      - name: Enable Nix build cache
+        uses: DeterminateSystems/magic-nix-cache-action@main
+
+      - name: Build Moonlight Qt
+        run: nix build .#moonlightReleaseBuild --out-link result-moonlight --print-build-logs
+
+      - name: Package Moonlight Qt
+        run: |
+          set -euo pipefail
+
+          archive="moonlight-qt-main-x86_64-linux.tar.gz"
+          tar -czf "$archive" -C "$(readlink -f result-moonlight)" .
+          sha256sum "$archive" >"$archive.sha256"
+
+          test -x result-moonlight/bin/moonlight
+          test -f result-moonlight/share/applications/com.moonlight_stream.Moonlight.desktop
+
+      - name: Attest Moonlight Qt archive
+        id: attest
+        uses: actions/attest@v4
+        with:
+          subject-path: moonlight-qt-main-x86_64-linux.tar.gz
+
+      - name: Prepare Moonlight Qt attestation asset
+        run: |
+          cp "${{ steps.attest.outputs.bundle-path }}" \
+            moonlight-main-build-x86_64-linux.sigstore.json
+
+      - name: Upload Moonlight Qt publication inputs
+        uses: actions/upload-artifact@v4
+        with:
+          name: publish-moonlight
+          path: |
+            moonlight-qt-main-x86_64-linux.tar.gz
+            moonlight-qt-main-x86_64-linux.tar.gz.sha256
+            moonlight-main-build-x86_64-linux.sigstore.json
+
   publish:
     needs:
       - build-niri-rio
       - build-sunshine
-    if: always() && (needs.build-niri-rio.result == 'success' || needs.build-sunshine.result == 'success')
+      - build-moonlight
+    if: always() && (needs.build-niri-rio.result == 'success' || needs.build-sunshine.result == 'success' || needs.build-moonlight.result == 'success')
     runs-on: ubuntu-latest
     concurrency:
       group: headless-main-build-publisher
@@ -176,10 +224,18 @@ jobs:
           name: publish-sunshine
           path: publish
 
+      - name: Download Moonlight Qt publication inputs
+        if: needs.build-moonlight.result == 'success'
+        uses: actions/download-artifact@v4
+        with:
+          name: publish-moonlight
+          path: publish
+
       - name: Select published package groups
         env:
           NIRI_RIO_RESULT: ${{ needs.build-niri-rio.result }}
           SUNSHINE_RESULT: ${{ needs.build-sunshine.result }}
+          MOONLIGHT_RESULT: ${{ needs.build-moonlight.result }}
         run: |
           set -euo pipefail
           groups=()
@@ -188,6 +244,9 @@ jobs:
           fi
           if [[ "$SUNSHINE_RESULT" == success ]]; then
             groups+=(sunshine)
+          fi
+          if [[ "$MOONLIGHT_RESULT" == success ]]; then
+            groups+=(moonlight)
           fi
           IFS=,
           echo "PUBLISH_GROUPS=${groups[*]}" >>"$GITHUB_ENV"

@@ -6,11 +6,12 @@ manifest_path="${1:-release-assets.json}"
 repo="${GITHUB_REPO:-zeroqn/headless}"
 release_tag="${RELEASE_TAG:-main-build}"
 api_url="${GITHUB_API_URL:-https://api.github.com}"
-publish_groups="${PUBLISH_GROUPS:-niri-rio,sunshine}"
+publish_groups="${PUBLISH_GROUPS:-niri-rio,sunshine,moonlight}"
 rio_revision="${RIO_REVISION:-d656326020ffe5959e221af7a7d1d8d82a6ab2db}"
 rio_version="${RIO_VERSION:-0.4.12-${rio_revision:0:7}}"
 sunshine_revision="${SUNSHINE_REVISION:-9d2409f71b60f1812f482e6dd807dc52e2f72fe7}"
 sunshine_version="${SUNSHINE_VERSION:-2026.07.15.vulkan}"
+moonlight_revision="${MOONLIGHT_REVISION:-1d1fe1aac39dd414ed825fe834b84a0e4eea8338}"
 
 owner="${repo%%/*}"
 repo_name="${repo#*/}"
@@ -23,8 +24,8 @@ has_group() {
   [[ ",${publish_groups}," == *",$1,"* ]]
 }
 
-if ! has_group niri-rio && ! has_group sunshine; then
-  echo "PUBLISH_GROUPS must include niri-rio, sunshine, or both" >&2
+if ! has_group niri-rio && ! has_group sunshine && ! has_group moonlight; then
+  echo "PUBLISH_GROUPS must include niri-rio, sunshine, moonlight, or a comma-separated combination" >&2
   exit 1
 fi
 
@@ -172,6 +173,28 @@ if has_group sunshine; then
           version: $version,
           revision: $revision,
           assets: ($sunshine_cuda_assets[0] | from_entries)
+        }
+    ' "$workdir/manifest.json" >"$workdir/manifest.next.json"
+  mv "$workdir/manifest.next.json" "$workdir/manifest.json"
+fi
+
+if has_group moonlight; then
+  collect_assets moonlight "moonlight-qt-main-"
+
+  jq \
+    --arg owner "$owner" \
+    --arg repo "$repo_name" \
+    --arg tag "$release_tag" \
+    --arg version "${release_tag}-${short_commit}" \
+    --arg revision "$moonlight_revision" \
+    --slurpfile moonlight_assets "$workdir/moonlight-assets.json" '
+      .owner = $owner
+      | .repo = $repo
+      | .release.tag = $tag
+      | .packages.moonlight = {
+          version: $version,
+          revision: $revision,
+          assets: ($moonlight_assets[0] | from_entries)
         }
     ' "$workdir/manifest.json" >"$workdir/manifest.next.json"
   mv "$workdir/manifest.next.json" "$workdir/manifest.json"

@@ -1,5 +1,5 @@
 {
-  description = "Prebuilt Niri headless, Rio, and Sunshine release flake";
+  description = "Prebuilt Niri headless, Rio, Sunshine, and Moonlight Qt release flake";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
@@ -105,6 +105,8 @@
         ]
         ++ lib.optionals cudaSupport [ cudaPackages.cuda_cudart ];
 
+      moonlightRevision = "1d1fe1aac39dd414ed825fe834b84a0e4eea8338";
+
       mkNiriBinaryPackage =
         pkgs: system:
         pkgs.callPackage ./prebuilt-package.nix {
@@ -150,6 +152,31 @@
           inherit pkgs cudaSupport;
         };
 
+      mkMoonlightBinaryPackage =
+        pkgs: system:
+        pkgs.callPackage ./moonlight/prebuilt-package.nix {
+          releaseAsset = releaseMeta.packages.moonlight.assets.${system} // {
+            inherit system;
+            inherit (releaseMeta) owner repo;
+            inherit (releaseMeta.release) tag;
+            inherit (releaseMeta.packages.moonlight) version;
+          };
+        };
+
+      mkMoonlightSourceBuild =
+        pkgs:
+        pkgs.moonlight-qt.overrideAttrs {
+          version = builtins.substring 0 7 moonlightRevision;
+          src = pkgs.fetchFromGitHub {
+            owner = "moonlight-stream";
+            repo = "moonlight-qt";
+            rev = moonlightRevision;
+            hash = "sha256-0cWR9uLQIa1eQOuQMTxbzWg7lFmqQ1hgle/Z+vCC/9k=";
+            fetchSubmodules = true;
+          };
+          patches = [ ];
+        };
+
       overlay =
         final: prev:
         let
@@ -158,6 +185,7 @@
           hasRioBinary = builtins.hasAttr system releaseMeta.packages.rio.assets;
           hasSunshineBinary = builtins.hasAttr system releaseMeta.packages.sunshine.assets;
           hasSunshineCudaBinary = builtins.hasAttr system releaseMeta.packages."sunshine-cuda".assets;
+          hasMoonlightBinary = builtins.hasAttr system releaseMeta.packages.moonlight.assets;
         in
         {
           niri-headless-release-build = niri-src.packages.${system}.default.overrideAttrs {
@@ -171,6 +199,7 @@
           };
           sunshine-headless-release-build = mkSunshineSourceBuild prev false;
           sunshine-headless-release-build-cuda = mkSunshineSourceBuild prev true;
+          moonlight-headless-release-build = mkMoonlightSourceBuild prev;
         }
         // prev.lib.optionalAttrs hasNiriBinary {
           niri = mkNiriBinaryPackage prev system;
@@ -185,6 +214,10 @@
         }
         // prev.lib.optionalAttrs hasSunshineCudaBinary {
           sunshine-bin-cuda = mkSunshineBinaryPackage prev system true;
+        }
+        // prev.lib.optionalAttrs hasMoonlightBinary {
+          moonlight-qt = mkMoonlightBinaryPackage prev system;
+          moonlight-qt-bin = final.moonlight-qt;
         };
     in
     flake-utils.lib.eachSystem supportedSystems (
@@ -223,6 +256,10 @@
           sunshine-bin-cuda = pkgs.sunshine-bin-cuda;
           sunshineReleaseBuild = pkgs.sunshine-headless-release-build;
           sunshineReleaseBuildCuda = pkgs.sunshine-headless-release-build-cuda;
+
+          moonlight-qt = pkgs.moonlight-qt;
+          moonlight-qt-bin = pkgs.moonlight-qt-bin;
+          moonlightReleaseBuild = pkgs.moonlight-headless-release-build;
         };
 
         apps.update-release-assets = {
@@ -243,6 +280,10 @@
             assert pkgs.sunshine != pkgs.sunshine-bin-cuda;
             assert pkgs.sunshine.meta.mainProgram == "sunshine";
             pkgs.runCommand "sunshine-package-metadata" { } "touch $out";
+          moonlight-package-metadata =
+            assert pkgs.moonlight-qt == pkgs.moonlight-qt-bin;
+            assert pkgs.moonlight-qt.meta.mainProgram == "moonlight";
+            pkgs.runCommand "moonlight-package-metadata" { } "touch $out";
         };
         formatter = pkgs.nixfmt;
       }

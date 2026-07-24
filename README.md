@@ -5,6 +5,7 @@ This repository builds and publishes prebuilt Nix package outputs for:
 - The `headless` branch of [`zeroqn/niri`](https://github.com/zeroqn/niri/tree/headless).
 - Rio commit [`d656326`](https://github.com/raphamorim/rio/commit/d656326020ffe5959e221af7a7d1d8d82a6ab2db).
 - Standard and CUDA-enabled Sunshine from the pinned source in `sunshine/source-package.nix`.
+- Moonlight Qt commit [`1d1fe1a`](https://github.com/moonlight-stream/moonlight-qt/commit/1d1fe1aac39dd414ed825fe834b84a0e4eea8338).
 
 Downstream NixOS systems install the release packages without compiling them locally.
 
@@ -21,12 +22,15 @@ Downstream NixOS systems install the release packages without compiling them loc
 - `packages.x86_64-linux.sunshine-bin-cuda`
 - `packages.x86_64-linux.sunshineReleaseBuild`
 - `packages.x86_64-linux.sunshineReleaseBuildCuda`
+- `packages.x86_64-linux.moonlight-qt`
+- `packages.x86_64-linux.moonlight-qt-bin`
+- `packages.x86_64-linux.moonlightReleaseBuild`
 
 The default package remains Niri. `sunshine` and `sunshine-bin` are the standard Sunshine package; CUDA is only enabled by selecting `sunshine-bin-cuda` explicitly.
 
 ## Downstream NixOS usage
 
-Import the provided module when NixOS configuration or another module should use the prebuilt `pkgs.niri` and `pkgs.sunshine` packages:
+Import the provided module when NixOS configuration or another module should use the prebuilt `pkgs.niri`, `pkgs.sunshine`, and `pkgs.moonlight-qt` packages:
 
 ```nix
 {
@@ -51,6 +55,7 @@ Import the provided module when NixOS configuration or another module should use
 
           environment.systemPackages = [
             pkgs.rio-headless-bin
+            pkgs.moonlight-qt
           ];
         })
       ];
@@ -88,6 +93,7 @@ environment.systemPackages = [
   headless.packages.${pkgs.system}.default
   headless.packages.${pkgs.system}.rio-bin
   headless.packages.${pkgs.system}.sunshine-bin
+  headless.packages.${pkgs.system}.moonlight-qt
 ];
 ```
 
@@ -114,16 +120,47 @@ headless.packages.${pkgs.system}.sunshine-bin-cuda
 
 The standalone Sunshine repository is not modified by this repository change. Retiring or archiving it is a separate operation after the Headless release publishes and verifies both Sunshine variants.
 
+## Migrating from the standalone Moonlight Qt flake
+
+Replace:
+
+```nix
+moonlight-qt.url = "github:zeroqn/moonlight-qt";
+```
+
+with the shared Headless input:
+
+```nix
+headless.url = "github:zeroqn/headless";
+```
+
+Replace `moonlight-qt.nixosModules.default` with `headless.nixosModules.default`.
+
+Existing overlay-based package references remain `pkgs.moonlight-qt`. Without the overlay, use:
+
+```nix
+headless.packages.${pkgs.system}.moonlight-qt
+```
+
+Source-build consumers replace the standalone `releaseBuild` output with:
+
+```nix
+headless.packages.${pkgs.system}.moonlightReleaseBuild
+```
+
+The standalone Moonlight Qt repository is not modified by this repository change. Retiring or archiving it is a separate operation after the Headless Moonlight release asset is published and verified.
+
 ## Release workflow
 
 `.github/workflows/build-release.yml` runs on pushes to `main` and:
 
 1. Builds Niri and Rio in one package group.
 2. Builds standard and CUDA Sunshine in a separate package group.
-3. Packages, checksums, and attests each successful group.
-4. Serializes release publication without deleting the rolling `main-build` release.
-5. Overwrites only assets owned by successful groups, leaving failed groups' existing assets intact.
-6. Updates only the published groups in `release-assets.json`.
+3. Builds Moonlight Qt in an independent package group.
+4. Packages, checksums, and attests each successful group.
+5. Serializes release publication without deleting the rolling `main-build` release.
+6. Overwrites only assets owned by successful groups, leaving failed groups' existing assets intact.
+7. Updates only the published groups in `release-assets.json`.
 
 After publishing assets manually, update all package metadata with:
 
@@ -136,4 +173,5 @@ Refresh only one publication group with:
 ```console
 PUBLISH_GROUPS=sunshine nix run .#update-release-assets
 PUBLISH_GROUPS=niri-rio nix run .#update-release-assets
+PUBLISH_GROUPS=moonlight nix run .#update-release-assets
 ```
