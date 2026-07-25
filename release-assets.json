@@ -59,6 +59,17 @@
           "hash": "sha256-xEWMErZHIAh6BwDtAGyvwA9CprhSXhFHJ0Q3JIsmlhI="
         }
       }
+    },
+    "waypipe": {
+      "version": "0.11.0-unstable-2026-06-17",
+      "revision": "1ac039b4d50e2658d284e750c182266cc00efe74",
+      "assets": {
+        "x86_64-linux": {
+          "name": "waypipe-1ac039b4-x86_64-linux.tar.gz",
+          "url": "https://github.com/zeroqn/headless/releases/download/main-build/waypipe-1ac039b4-x86_64-linux.tar.gz",
+          "hash": "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+        }
+      }
     }
   }
 }

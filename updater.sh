@@ -6,12 +6,14 @@ manifest_path="${1:-release-assets.json}"
 repo="${GITHUB_REPO:-zeroqn/headless}"
 release_tag="${RELEASE_TAG:-main-build}"
 api_url="${GITHUB_API_URL:-https://api.github.com}"
-publish_groups="${PUBLISH_GROUPS:-niri-rio,sunshine,moonlight}"
+publish_groups="${PUBLISH_GROUPS:-niri-rio,sunshine,moonlight,waypipe}"
 rio_revision="${RIO_REVISION:-d656326020ffe5959e221af7a7d1d8d82a6ab2db}"
 rio_version="${RIO_VERSION:-0.4.12-${rio_revision:0:7}}"
 sunshine_revision="${SUNSHINE_REVISION:-9d2409f71b60f1812f482e6dd807dc52e2f72fe7}"
 sunshine_version="${SUNSHINE_VERSION:-2026.07.15.vulkan}"
 moonlight_revision="${MOONLIGHT_REVISION:-1d1fe1aac39dd414ed825fe834b84a0e4eea8338}"
+waypipe_revision="${WAYPIPE_REVISION:-1ac039b4d50e2658d284e750c182266cc00efe74}"
+waypipe_version="${WAYPIPE_VERSION:-0.11.0-unstable-2026-06-17}"
 
 owner="${repo%%/*}"
 repo_name="${repo#*/}"
@@ -24,7 +26,7 @@ has_group() {
   [[ ",${publish_groups}," == *",$1,"* ]]
 }
 
-if ! has_group niri-rio && ! has_group sunshine && ! has_group moonlight; then
+if ! has_group niri-rio && ! has_group sunshine && ! has_group moonlight && ! has_group waypipe; then
   echo "PUBLISH_GROUPS must include niri-rio, sunshine, moonlight, or a comma-separated combination" >&2
   exit 1
 fi
@@ -195,6 +197,28 @@ if has_group moonlight; then
           version: $version,
           revision: $revision,
           assets: ($moonlight_assets[0] | from_entries)
+        }
+    ' "$workdir/manifest.json" >"$workdir/manifest.next.json"
+  mv "$workdir/manifest.next.json" "$workdir/manifest.json"
+fi
+
+if has_group waypipe; then
+  collect_assets waypipe "waypipe-${waypipe_revision:0:8}-"
+
+  jq \
+    --arg owner "$owner" \
+    --arg repo "$repo_name" \
+    --arg tag "$release_tag" \
+    --arg version "$waypipe_version" \
+    --arg revision "$waypipe_revision" \
+    --slurpfile waypipe_assets "$workdir/waypipe-assets.json" '
+      .owner = $owner
+      | .repo = $repo
+      | .release.tag = $tag
+      | .packages.waypipe = {
+          version: $version,
+          revision: $revision,
+          assets: ($waypipe_assets[0] | from_entries)
         }
     ' "$workdir/manifest.json" >"$workdir/manifest.next.json"
   mv "$workdir/manifest.next.json" "$workdir/manifest.json"

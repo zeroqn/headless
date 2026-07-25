@@ -1,5 +1,5 @@
 {
-  description = "Prebuilt Niri headless, Rio, Sunshine, and Moonlight Qt release flake";
+  description = "Prebuilt Niri headless, Rio, Sunshine, Moonlight Qt, and Waypipe release flake";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
@@ -106,6 +106,17 @@
         ++ lib.optionals cudaSupport [ cudaPackages.cuda_cudart ];
 
       moonlightRevision = "1d1fe1aac39dd414ed825fe834b84a0e4eea8338";
+      waypipeRevision = "1ac039b4d50e2658d284e750c182266cc00efe74";
+      waypipeVersion = "0.11.0-unstable-2026-06-17";
+
+      waypipeRuntimeDeps =
+        pkgs: with pkgs; [
+          ffmpeg
+          libgbm
+          lz4
+          vulkan-loader
+          zstd
+        ];
 
       mkNiriBinaryPackage =
         pkgs: system:
@@ -177,6 +188,38 @@
           patches = [ ];
         };
 
+      mkWaypipeBinaryPackage =
+        pkgs: system:
+        pkgs.callPackage ./waypipe/prebuilt-package.nix {
+          runtimeDeps = waypipeRuntimeDeps pkgs;
+          releaseAsset = releaseMeta.packages.waypipe.assets.${system} // {
+            inherit system;
+            inherit (releaseMeta) owner repo;
+            inherit (releaseMeta.release) tag;
+            inherit (releaseMeta.packages.waypipe) version;
+          };
+        };
+
+      mkWaypipeSourceBuild =
+        pkgs:
+        pkgs.waypipe.overrideAttrs (finalAttrs: {
+          version = waypipeVersion;
+          src = pkgs.fetchFromGitLab {
+            domain = "gitlab.freedesktop.org";
+            owner = "mstoeckl";
+            repo = "waypipe";
+            rev = waypipeRevision;
+            hash = "sha256-rSTphq/ZJItyp3DTcZyHxD8LvdA0FKCCaA0lw0TXQeA=";
+          };
+          cargoDeps = pkgs.rustPlatform.fetchCargoVendor {
+            inherit (finalAttrs) pname version src;
+            hash = "sha256-IUvXHLxrhc2Au57wsE53Q+NL1cZzFcaRG3HDV8s3xWw=";
+          };
+          passthru = (finalAttrs.passthru or { }) // {
+            sourceRevision = waypipeRevision;
+          };
+        });
+
       overlay =
         final: prev:
         let
@@ -186,6 +229,7 @@
           hasSunshineBinary = builtins.hasAttr system releaseMeta.packages.sunshine.assets;
           hasSunshineCudaBinary = builtins.hasAttr system releaseMeta.packages."sunshine-cuda".assets;
           hasMoonlightBinary = builtins.hasAttr system releaseMeta.packages.moonlight.assets;
+          hasWaypipeBinary = builtins.hasAttr system releaseMeta.packages.waypipe.assets;
         in
         {
           niri-headless-release-build = niri-src.packages.${system}.default.overrideAttrs {
@@ -200,6 +244,7 @@
           sunshine-headless-release-build = mkSunshineSourceBuild prev false;
           sunshine-headless-release-build-cuda = mkSunshineSourceBuild prev true;
           moonlight-headless-release-build = mkMoonlightSourceBuild prev;
+          waypipe-headless-release-build = mkWaypipeSourceBuild prev;
         }
         // prev.lib.optionalAttrs hasNiriBinary {
           niri = mkNiriBinaryPackage prev system;
@@ -218,6 +263,10 @@
         // prev.lib.optionalAttrs hasMoonlightBinary {
           moonlight-qt = mkMoonlightBinaryPackage prev system;
           moonlight-qt-bin = final.moonlight-qt;
+        }
+        // prev.lib.optionalAttrs hasWaypipeBinary {
+          waypipe = mkWaypipeBinaryPackage prev system;
+          waypipe-bin = final.waypipe;
         };
     in
     flake-utils.lib.eachSystem supportedSystems (
@@ -260,6 +309,10 @@
           moonlight-qt = pkgs.moonlight-qt;
           moonlight-qt-bin = pkgs.moonlight-qt-bin;
           moonlightReleaseBuild = pkgs.moonlight-headless-release-build;
+
+          waypipe = pkgs.waypipe;
+          waypipe-bin = pkgs.waypipe-bin;
+          waypipeReleaseBuild = pkgs.waypipe-headless-release-build;
         };
 
         apps.update-release-assets = {
@@ -284,6 +337,13 @@
             assert pkgs.moonlight-qt == pkgs.moonlight-qt-bin;
             assert pkgs.moonlight-qt.meta.mainProgram == "moonlight";
             pkgs.runCommand "moonlight-package-metadata" { } "touch $out";
+          waypipe-package-metadata =
+            assert pkgs.waypipe == pkgs.waypipe-bin;
+            assert pkgs.waypipe.meta.mainProgram == "waypipe";
+            assert
+              pkgs.waypipe-headless-release-build.passthru.sourceRevision
+              == "1ac039b4d50e2658d284e750c182266cc00efe74";
+            pkgs.runCommand "waypipe-package-metadata" { } "touch $out";
         };
         formatter = pkgs.nixfmt;
       }

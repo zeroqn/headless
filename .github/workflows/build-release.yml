@@ -192,12 +192,60 @@ jobs:
             moonlight-qt-main-x86_64-linux.tar.gz.sha256
             moonlight-main-build-x86_64-linux.sigstore.json
 
+  build-waypipe:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Nix
+        uses: DeterminateSystems/nix-installer-action@main
+
+      - name: Enable Nix build cache
+        uses: DeterminateSystems/magic-nix-cache-action@main
+
+      - name: Build Waypipe
+        run: nix build .#waypipeReleaseBuild --out-link result-waypipe --print-build-logs
+
+      - name: Package Waypipe
+        run: |
+          set -euo pipefail
+
+          archive="waypipe-1ac039b4-x86_64-linux.tar.gz"
+          test -x result-waypipe/bin/waypipe
+          test -f result-waypipe/share/man/man1/waypipe.1
+          result-waypipe/bin/waypipe --version
+          tar -czf "$archive" -C "$(readlink -f result-waypipe)" .
+          sha256sum "$archive" >"$archive.sha256"
+
+      - name: Attest Waypipe archive
+        id: attest
+        uses: actions/attest@v4
+        with:
+          subject-path: waypipe-1ac039b4-x86_64-linux.tar.gz
+
+      - name: Prepare Waypipe attestation asset
+        run: |
+          cp "${{ steps.attest.outputs.bundle-path }}" \
+            waypipe-main-build-x86_64-linux.sigstore.json
+
+      - name: Upload Waypipe publication inputs
+        uses: actions/upload-artifact@v4
+        with:
+          name: publish-waypipe
+          path: |
+            waypipe-1ac039b4-x86_64-linux.tar.gz
+            waypipe-1ac039b4-x86_64-linux.tar.gz.sha256
+            waypipe-main-build-x86_64-linux.sigstore.json
+
   publish:
     needs:
       - build-niri-rio
       - build-sunshine
       - build-moonlight
-    if: always() && (needs.build-niri-rio.result == 'success' || needs.build-sunshine.result == 'success' || needs.build-moonlight.result == 'success')
+      - build-waypipe
+    if: always() && (needs.build-niri-rio.result == 'success' || needs.build-sunshine.result == 'success' || needs.build-moonlight.result == 'success' || needs.build-waypipe.result == 'success')
     runs-on: ubuntu-latest
     concurrency:
       group: headless-main-build-publisher
@@ -231,11 +279,19 @@ jobs:
           name: publish-moonlight
           path: publish
 
+      - name: Download Waypipe publication inputs
+        if: needs.build-waypipe.result == 'success'
+        uses: actions/download-artifact@v4
+        with:
+          name: publish-waypipe
+          path: publish
+
       - name: Select published package groups
         env:
           NIRI_RIO_RESULT: ${{ needs.build-niri-rio.result }}
           SUNSHINE_RESULT: ${{ needs.build-sunshine.result }}
           MOONLIGHT_RESULT: ${{ needs.build-moonlight.result }}
+          WAYPIPE_RESULT: ${{ needs.build-waypipe.result }}
         run: |
           set -euo pipefail
           groups=()
@@ -247,6 +303,9 @@ jobs:
           fi
           if [[ "$MOONLIGHT_RESULT" == success ]]; then
             groups+=(moonlight)
+          fi
+          if [[ "$WAYPIPE_RESULT" == success ]]; then
+            groups+=(waypipe)
           fi
           IFS=,
           echo "PUBLISH_GROUPS=${groups[*]}" >>"$GITHUB_ENV"

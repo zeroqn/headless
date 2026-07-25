@@ -6,6 +6,7 @@ This repository builds and publishes prebuilt Nix package outputs for:
 - Rio commit [`d656326`](https://github.com/raphamorim/rio/commit/d656326020ffe5959e221af7a7d1d8d82a6ab2db).
 - Standard and CUDA-enabled Sunshine from the pinned source in `sunshine/source-package.nix`.
 - Moonlight Qt commit [`1d1fe1a`](https://github.com/moonlight-stream/moonlight-qt/commit/1d1fe1aac39dd414ed825fe834b84a0e4eea8338).
+- Waypipe commit [`1ac039b4`](https://gitlab.freedesktop.org/mstoeckl/waypipe/-/commit/1ac039b4d50e2658d284e750c182266cc00efe74).
 
 Downstream NixOS systems install the release packages without compiling them locally.
 
@@ -25,12 +26,15 @@ Downstream NixOS systems install the release packages without compiling them loc
 - `packages.x86_64-linux.moonlight-qt`
 - `packages.x86_64-linux.moonlight-qt-bin`
 - `packages.x86_64-linux.moonlightReleaseBuild`
+- `packages.x86_64-linux.waypipe`
+- `packages.x86_64-linux.waypipe-bin`
+- `packages.x86_64-linux.waypipeReleaseBuild`
 
 The default package remains Niri. `sunshine` and `sunshine-bin` are the standard Sunshine package; CUDA is only enabled by selecting `sunshine-bin-cuda` explicitly.
 
 ## Downstream NixOS usage
 
-Import the provided module when NixOS configuration or another module should use the prebuilt `pkgs.niri`, `pkgs.sunshine`, and `pkgs.moonlight-qt` packages:
+Import the provided module when NixOS configuration or another module should use the prebuilt `pkgs.niri`, `pkgs.sunshine`, `pkgs.moonlight-qt`, and `pkgs.waypipe` packages:
 
 ```nix
 {
@@ -56,6 +60,7 @@ Import the provided module when NixOS configuration or another module should use
           environment.systemPackages = [
             pkgs.rio-headless-bin
             pkgs.moonlight-qt
+            pkgs.waypipe
           ];
         })
       ];
@@ -64,7 +69,7 @@ Import the provided module when NixOS configuration or another module should use
 }
 ```
 
-The overlay does not replace nixpkgs `pkgs.rio`; Rio is exposed as `pkgs.rio-headless-bin`.
+The overlay does not replace nixpkgs `pkgs.rio`; Rio is exposed as `pkgs.rio-headless-bin`. The overlay replaces nixpkgs `pkgs.waypipe` with the prebuilt package and also exposes the same package as `pkgs.waypipe-bin`.
 
 For a CUDA-enabled Sunshine service, allow unfree packages in the downstream Nixpkgs configuration and select the CUDA package explicitly:
 
@@ -94,6 +99,7 @@ environment.systemPackages = [
   headless.packages.${pkgs.system}.rio-bin
   headless.packages.${pkgs.system}.sunshine-bin
   headless.packages.${pkgs.system}.moonlight-qt
+  headless.packages.${pkgs.system}.waypipe
 ];
 ```
 
@@ -157,10 +163,11 @@ The standalone Moonlight Qt repository is not modified by this repository change
 1. Builds Niri and Rio in one package group.
 2. Builds standard and CUDA Sunshine in a separate package group.
 3. Builds Moonlight Qt in an independent package group.
-4. Packages, checksums, and attests each successful group.
-5. Serializes release publication without deleting the rolling `main-build` release.
-6. Overwrites only assets owned by successful groups, leaving failed groups' existing assets intact.
-7. Updates only the published groups in `release-assets.json`.
+4. Builds Waypipe in an independent package group.
+5. Packages, checksums, and attests each successful group.
+6. Serializes release publication without deleting the rolling `main-build` release.
+7. Overwrites only assets owned by successful groups, leaving failed groups' existing assets intact.
+8. Updates only the published groups in `release-assets.json`.
 
 After publishing assets manually, update all package metadata with:
 
@@ -174,4 +181,5 @@ Refresh only one publication group with:
 PUBLISH_GROUPS=sunshine nix run .#update-release-assets
 PUBLISH_GROUPS=niri-rio nix run .#update-release-assets
 PUBLISH_GROUPS=moonlight nix run .#update-release-assets
+PUBLISH_GROUPS=waypipe nix run .#update-release-assets
 ```
