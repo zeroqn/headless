@@ -236,9 +236,12 @@
             doCheck = false;
           };
           rio-headless-release-build = prev.callPackage ./rio-release-package.nix {
-            rio = rio-src.packages.${system}.default.overrideAttrs {
+            rio = rio-src.packages.${system}.default.overrideAttrs (oldAttrs: {
               doCheck = false;
-            };
+              patches = (oldAttrs.patches or [ ]) ++ [
+                ./patches/rio-pr-1626.patch
+              ];
+            });
             rioSource = rio-src;
           };
           sunshine-headless-release-build = mkSunshineSourceBuild prev false;
@@ -327,6 +330,9 @@
           rio-package-metadata =
             assert pkgs.rio-headless-bin.meta.mainProgram == "rio";
             assert pkgs.rio != pkgs.rio-headless-bin;
+            assert
+              pkgs.rio-headless-release-build.passthru.sourceRevision
+              == "d656326020ffe5959e221af7a7d1d8d82a6ab2db";
             pkgs.runCommand "rio-package-metadata" { } "touch $out";
           sunshine-package-metadata =
             assert pkgs.sunshine == pkgs.sunshine-bin;
