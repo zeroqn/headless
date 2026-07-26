@@ -215,6 +215,7 @@
             inherit (finalAttrs) pname version src;
             hash = "sha256-IUvXHLxrhc2Au57wsE53Q+NL1cZzFcaRG3HDV8s3xWw=";
           };
+          dontGzipMan = true;
           passthru = (finalAttrs.passthru or { }) // {
             sourceRevision = waypipeRevision;
           };
@@ -346,6 +347,7 @@
           waypipe-package-metadata =
             assert pkgs.waypipe == pkgs.waypipe-bin;
             assert pkgs.waypipe.meta.mainProgram == "waypipe";
+            assert pkgs.waypipe-headless-release-build.dontGzipMan;
             assert
               pkgs.waypipe-headless-release-build.passthru.sourceRevision
               == "1ac039b4d50e2658d284e750c182266cc00efe74";
