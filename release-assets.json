@@ -67,7 +67,7 @@
         "x86_64-linux": {
           "name": "waypipe-1ac039b4-x86_64-linux.tar.gz",
           "url": "https://github.com/zeroqn/headless/releases/download/main-build/waypipe-1ac039b4-x86_64-linux.tar.gz",
-          "hash": "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+          "hash": "sha256-xRPpIgUFBqz2B0ygVJZ4abs5YzfjjmR0BpbxsORCSrY="
         }
       }
     }
