@@ -12,7 +12,7 @@
         "x86_64-linux": {
           "name": "niri-headless-main-x86_64-linux.tar.gz",
           "url": "https://github.com/zeroqn/headless/releases/download/main-build/niri-headless-main-x86_64-linux.tar.gz",
-          "hash": "sha256-GNyVpGIuMI/90zvTdfVDlBpcN4CjApte1jkuKSwZ2eg="
+          "hash": "sha256-rfDFEdTdygANPo0PjwB97fHb/ZNFcox/CvPv5gyN8o8="
         }
       }
     },
@@ -23,7 +23,7 @@
         "x86_64-linux": {
           "name": "rio-d656326-x86_64-linux.tar.gz",
           "url": "https://github.com/zeroqn/headless/releases/download/main-build/rio-d656326-x86_64-linux.tar.gz",
-          "hash": "sha256-7+TRKg60Foct35/wRa9/LAa0bMpDkFyJI01JeDIfRc4="
+          "hash": "sha256-K6tZ92X5dvtMNcGJ8BWpXLI8Vw9R/Qoe3RAW2lbz8os="
         }
       }
     },
@@ -34,7 +34,7 @@
         "x86_64-linux": {
           "name": "sunshine-main-x86_64-linux.tar.gz",
           "url": "https://github.com/zeroqn/headless/releases/download/main-build/sunshine-main-x86_64-linux.tar.gz",
-          "hash": "sha256-oX+6Gt3cxP9WmYCt91RTG1WkqL6vxSYGV86sEyVMkKI="
+          "hash": "sha256-1FDU8ggpZh4o95kuJlZNPJQNgUtBAA2M+JzCskwCYkg="
         }
       }
     },
@@ -45,7 +45,7 @@
         "x86_64-linux": {
           "name": "sunshine-main-cuda-x86_64-linux.tar.gz",
           "url": "https://github.com/zeroqn/headless/releases/download/main-build/sunshine-main-cuda-x86_64-linux.tar.gz",
-          "hash": "sha256-y3UPxQVmpsfG41lHaYgFPB2H7wX7vi51mXw6XEZ3cuc="
+          "hash": "sha256-mnh8n/fmwM3lYEpXzj2jDezlBecKbqDy1y+oyi2olCM="
         }
       }
     },
@@ -56,7 +56,7 @@
         "x86_64-linux": {
           "name": "moonlight-qt-main-x86_64-linux.tar.gz",
           "url": "https://github.com/zeroqn/headless/releases/download/main-build/moonlight-qt-main-x86_64-linux.tar.gz",
-          "hash": "sha256-xEWMErZHIAh6BwDtAGyvwA9CprhSXhFHJ0Q3JIsmlhI="
+          "hash": "sha256-zJEewn0MoW7D9b8JKvP06w/dXaSwVjSEAv5MtZjfuTs="
         }
       }
     },
@@ -67,7 +67,7 @@
         "x86_64-linux": {
           "name": "waypipe-1ac039b4-x86_64-linux.tar.gz",
           "url": "https://github.com/zeroqn/headless/releases/download/main-build/waypipe-1ac039b4-x86_64-linux.tar.gz",
-          "hash": "sha256-xRPpIgUFBqz2B0ygVJZ4abs5YzfjjmR0BpbxsORCSrY="
+          "hash": "sha256-e+QyuU87RkOSkeg3fyU1M0g8oWIwHiLEkD95ceEc40k="
         }
       }
     }
