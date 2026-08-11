@@ -118,6 +118,33 @@
           zstd
         ];
 
+      mesaSourceRevision = "mesa-26.1.5";
+
+      mesaRuntimeDeps =
+        pkgs: with pkgs; [
+          libdrm
+          libgbm
+          libglvnd
+          expat
+          libx11
+          libxcb
+          libxext
+          libxfixes
+          libxrandr
+          libxshmfence
+          libxxf86vm
+          wayland
+          llvmPackages.libllvm
+          zstd
+          elfutils
+          lm_sensors
+          libdisplay-info
+          libpng
+          libunwind
+          libva-minimal
+          gcc-unwrapped
+        ];
+
       mkNiriBinaryPackage =
         pkgs: system:
         pkgs.callPackage ./prebuilt-package.nix {
@@ -221,6 +248,30 @@
           };
         });
 
+      mkMesaBinaryPackage =
+        pkgs: system:
+        pkgs.callPackage ./mesa/prebuilt-package.nix {
+          runtimeDeps = mesaRuntimeDeps pkgs;
+          releaseAsset = releaseMeta.packages.mesa.assets.${system} // {
+            inherit system;
+            inherit (releaseMeta) owner repo;
+            inherit (releaseMeta.release) tag;
+            inherit (releaseMeta.packages.mesa) version;
+            inherit (releaseMeta.packages.mesa) revision;
+          };
+        };
+
+      mkMesaSourceBuild =
+        pkgs:
+        pkgs.mesa.overrideAttrs (finalAttrs: {
+          patches = (finalAttrs.patches or [ ]) ++ [
+            ./patches/mesa-headless-virtio-modifiers.patch
+          ];
+          passthru = (finalAttrs.passthru or { }) // {
+            sourceRevision = mesaSourceRevision;
+          };
+        });
+
       overlay =
         final: prev:
         let
@@ -231,6 +282,7 @@
           hasSunshineCudaBinary = builtins.hasAttr system releaseMeta.packages."sunshine-cuda".assets;
           hasMoonlightBinary = builtins.hasAttr system releaseMeta.packages.moonlight.assets;
           hasWaypipeBinary = builtins.hasAttr system releaseMeta.packages.waypipe.assets;
+          hasMesaBinary = builtins.hasAttr system releaseMeta.packages.mesa.assets;
         in
         {
           niri-headless-release-build = niri-src.packages.${system}.default.overrideAttrs {
@@ -249,6 +301,7 @@
           sunshine-headless-release-build-cuda = mkSunshineSourceBuild prev true;
           moonlight-headless-release-build = mkMoonlightSourceBuild prev;
           waypipe-headless-release-build = mkWaypipeSourceBuild prev;
+          mesa-headless-release-build = mkMesaSourceBuild prev;
         }
         // prev.lib.optionalAttrs hasNiriBinary {
           niri = mkNiriBinaryPackage prev system;
@@ -271,6 +324,19 @@
         // prev.lib.optionalAttrs hasWaypipeBinary {
           waypipe = mkWaypipeBinaryPackage prev system;
           waypipe-bin = final.waypipe;
+        }
+        // prev.lib.optionalAttrs hasMesaBinary {
+          mesa =
+            let
+              prebuilt = mkMesaBinaryPackage prev system;
+            in
+            prebuilt.overrideAttrs {
+              passthru = (prebuilt.passthru or { }) // {
+                inherit (prev.mesa) driverLink;
+                inherit (prev.mesa) opencl spirv2dxil cross_tools debug;
+              };
+            };
+          mesa-headless-bin = final.mesa;
         };
     in
     flake-utils.lib.eachSystem supportedSystems (
@@ -317,6 +383,10 @@
           waypipe = pkgs.waypipe;
           waypipe-bin = pkgs.waypipe-bin;
           waypipeReleaseBuild = pkgs.waypipe-headless-release-build;
+
+          mesa = pkgs.mesa;
+          mesa-headless-bin = pkgs.mesa-headless-bin;
+          mesaReleaseBuild = pkgs.mesa-headless-release-build;
         };
 
         apps.update-release-assets = {
@@ -370,6 +440,16 @@
               pkgs.waypipe-headless-release-build.passthru.sourceRevision
               == "1ac039b4d50e2658d284e750c182266cc00efe74";
             pkgs.runCommand "waypipe-package-metadata" { } "touch $out";
+          mesa-package-metadata =
+            assert pkgs.mesa == pkgs.mesa-headless-bin;
+            assert pkgs.mesa != pkgs.mesa-headless-release-build;
+            assert pkgs.mesa.passthru.sourceRevision == "mesa-26.1.5";
+            assert pkgs.mesa.passthru.driverLink == "/run/opengl-driver";
+            assert pkgs.mesa.passthru.opencl != null;
+            assert pkgs.mesa.passthru.spirv2dxil != null;
+            assert pkgs.mesa.passthru.cross_tools != null;
+            assert pkgs.mesa.passthru.debug != null;
+            pkgs.runCommand "mesa-package-metadata" { } "touch $out";
         };
         formatter = pkgs.nixfmt;
       }

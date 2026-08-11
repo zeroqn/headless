@@ -7,6 +7,7 @@ This repository builds and publishes prebuilt Nix package outputs for:
 - Standard and CUDA-enabled Sunshine from the pinned source in `sunshine/source-package.nix`.
 - Moonlight Qt commit [`1d1fe1a`](https://github.com/moonlight-stream/moonlight-qt/commit/1d1fe1aac39dd414ed825fe834b84a0e4eea8338).
 - Waypipe commit [`1ac039b4`](https://gitlab.freedesktop.org/mstoeckl/waypipe/-/commit/1ac039b4d50e2658d284e750c182266cc00efe74).
+- Patched Mesa `26.1.5` from the pinned nixpkgs with `patches/mesa-headless-virtio-modifiers.patch` appended (AMD virtio-gpu DMA-BUF modifier fix for radeonsi).
 
 Downstream NixOS systems install the release packages without compiling them locally.
 
@@ -29,8 +30,11 @@ Downstream NixOS systems install the release packages without compiling them loc
 - `packages.x86_64-linux.waypipe`
 - `packages.x86_64-linux.waypipe-bin`
 - `packages.x86_64-linux.waypipeReleaseBuild`
+- `packages.x86_64-linux.mesa`
+- `packages.x86_64-linux.mesa-headless-bin`
+- `packages.x86_64-linux.mesaReleaseBuild`
 
-The default package remains Niri. `sunshine` and `sunshine-bin` are the standard Sunshine package; CUDA is only enabled by selecting `sunshine-bin-cuda` explicitly.
+The default package remains Niri. `sunshine` and `sunshine-bin` are the standard Sunshine package; CUDA is only enabled by selecting `sunshine-bin-cuda` explicitly. `mesa` and `mesa-headless-bin` are the patched prebuilt Mesa; `mesaReleaseBuild` is the pinned source build used by release CI. The initial Mesa prebuilt supports `x86_64-linux` only, and the nixpkgs Mesa auxiliary outputs (`opencl`, `spirv2dxil`, `cross_tools`, `debug`) remain supplied by nixpkgs via passthru.
 
 ## Downstream NixOS usage
 
@@ -62,6 +66,8 @@ Import the provided module when NixOS configuration or another module should use
             pkgs.moonlight-qt
             pkgs.waypipe
           ];
+
+          hardware.graphics.enable = true;
         })
       ];
     };
@@ -69,7 +75,7 @@ Import the provided module when NixOS configuration or another module should use
 }
 ```
 
-The overlay does not replace nixpkgs `pkgs.rio`; Rio is exposed as `pkgs.rio-headless-bin`. The overlay replaces nixpkgs `pkgs.waypipe` with the prebuilt package and also exposes the same package as `pkgs.waypipe-bin`.
+The overlay does not replace nixpkgs `pkgs.rio`; Rio is exposed as `pkgs.rio-headless-bin`. The overlay replaces nixpkgs `pkgs.waypipe` with the prebuilt package and also exposes the same package as `pkgs.waypipe-bin`. The overlay replaces nixpkgs `pkgs.mesa` with the patched prebuilt package and exposes the same package as `pkgs.mesa-headless-bin`, so `hardware.graphics.package` (which defaults to `pkgs.mesa`) resolves to the patched Mesa on AMD virtio-gpu native-context guests. Packages that build against `pkgs.mesa`'s non-`out` outputs should use `pkgs.mesa-headless-release-build` instead.
 
 For a CUDA-enabled Sunshine service, allow unfree packages in the downstream Nixpkgs configuration and select the CUDA package explicitly:
 
@@ -101,6 +107,8 @@ environment.systemPackages = [
   headless.packages.${pkgs.system}.moonlight-qt
   headless.packages.${pkgs.system}.waypipe
 ];
+
+hardware.graphics.package = headless.packages.${pkgs.system}.mesa;
 ```
 
 ## Migrating from the standalone Sunshine flake
@@ -164,10 +172,11 @@ The standalone Moonlight Qt repository is not modified by this repository change
 2. Builds standard and CUDA Sunshine in a separate package group.
 3. Builds Moonlight Qt in an independent package group.
 4. Builds Waypipe in an independent package group.
-5. Packages, checksums, and attests each successful group.
-6. Serializes release publication without deleting the rolling `main-build` release.
-7. Overwrites only assets owned by successful groups, leaving failed groups' existing assets intact.
-8. Updates only the published groups in `release-assets.json`.
+5. Builds patched Mesa in an independent package group.
+6. Packages, checksums, and attests each successful group.
+7. Serializes release publication without deleting the rolling `main-build` release.
+8. Overwrites only assets owned by successful groups, leaving failed groups' existing assets intact.
+9. Updates only the published groups in `release-assets.json`.
 
 After publishing assets manually, update all package metadata with:
 
@@ -182,4 +191,5 @@ PUBLISH_GROUPS=sunshine nix run .#update-release-assets
 PUBLISH_GROUPS=niri-rio nix run .#update-release-assets
 PUBLISH_GROUPS=moonlight nix run .#update-release-assets
 PUBLISH_GROUPS=waypipe nix run .#update-release-assets
+PUBLISH_GROUPS=mesa nix run .#update-release-assets
 ```
