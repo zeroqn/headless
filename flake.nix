@@ -31,7 +31,7 @@
           cairo
           dbus
           libGL
-          libdisplay-info
+          libdisplay-info_0_3
           libinput
           seatd
           libgbm
@@ -328,6 +328,24 @@
           session-package-metadata =
             assert pkgs.niri.providedSessions == [ "niri" ];
             pkgs.runCommand "niri-session-package-metadata" { } "touch $out";
+          niri-runtime-dep-mirror =
+            let
+              rawPkgs = import nixpkgs { inherit system; };
+              sourceLibdi = builtins.head (
+                builtins.filter (d: builtins.match ".*libdisplay-info.*" d.name != null) (
+                  rawPkgs.niri.buildInputs or [ ]
+                )
+              );
+              prebuiltLibdi = builtins.head (
+                builtins.filter (d: builtins.match ".*libdisplay-info.*" d.name != null) (
+                  pkgs.niri-headless-bin.passthru.runtimeDeps or [ ]
+                )
+              );
+            in
+            if prebuiltLibdi.name != sourceLibdi.name then
+              throw "niri prebuilt runtimeDeps libdisplay-info ${prebuiltLibdi.name} does not mirror the source build's ${sourceLibdi.name}"
+            else
+              pkgs.runCommand "niri-runtime-dep-mirror" { } "touch $out";
           rio-package-metadata =
             assert pkgs.rio-headless-bin.meta.mainProgram == "rio";
             assert pkgs.rio != pkgs.rio-headless-bin;
