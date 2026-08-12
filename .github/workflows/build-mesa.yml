@@ -1,0 +1,148 @@
+name: Build and publish Mesa
+
+on:
+  schedule:
+    - cron: '0 6 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  id-token: write
+  attestations: write
+  artifact-metadata: write
+
+jobs:
+  update-and-build-mesa:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Nix
+        uses: DeterminateSystems/nix-installer-action@main
+
+      - name: Enable Nix build cache
+        uses: DeterminateSystems/magic-nix-cache-action@main
+
+      - name: Update nixpkgs input
+        run: nix flake update nixpkgs
+
+      - name: Extract Mesa version from updated nixpkgs
+        id: mesa-version
+        run: |
+          MESA_VERSION="$(nix eval --raw .#mesaReleaseBuild.version)"
+          echo "MESA_VERSION=$MESA_VERSION" >> "$GITHUB_OUTPUT"
+          echo "Detected Mesa version: $MESA_VERSION"
+
+      - name: Check current pinned Mesa version
+        id: check-version
+        env:
+          MESA_VERSION: ${{ steps.mesa-version.outputs.MESA_VERSION }}
+        run: |
+          CURRENT_VERSION="$(grep -oP 'mesa_version="\$\{MESA_VERSION:-\K[^}]+' updater.sh)"
+          echo "Current pinned: $CURRENT_VERSION"
+          echo "New version:    $MESA_VERSION"
+          if [ "$MESA_VERSION" != "$CURRENT_VERSION" ]; then
+            echo "version_changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "version_changed=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Confirm workflow commit is current main
+        run: |
+          git fetch origin main
+          test "$(git rev-parse HEAD)" = "$(git rev-parse origin/main)"
+
+      - name: Stage Mesa version update
+        if: steps.check-version.outputs.version_changed == 'true'
+        env:
+          MESA_VERSION: ${{ steps.mesa-version.outputs.MESA_VERSION }}
+        run: |
+          sed -i "s/mesaSourceRevision = \"mesa-[0-9.]*\";/mesaSourceRevision = \"mesa-${MESA_VERSION}\";/" flake.nix
+          sed -i "s/mesa_revision=\"\${MESA_REVISION:-mesa-[0-9.]*}\"/mesa_revision=\"\${MESA_REVISION:-mesa-${MESA_VERSION}}\"/" updater.sh
+          sed -i "s/mesa_version=\"\${MESA_VERSION:-[0-9.]*}\"/mesa_version=\"\${MESA_VERSION:-${MESA_VERSION}}\"/" updater.sh
+
+      - name: Build patched Mesa
+        env:
+          MESA_VERSION: ${{ steps.mesa-version.outputs.MESA_VERSION }}
+        run: |
+          if ! nix build .#mesaReleaseBuild \
+            --out-link result-mesa \
+            --print-build-logs 2>&1 | tee build.log; then
+            echo "Mesa build failed -- the patch may need updating for Mesa ${MESA_VERSION}"
+            cat build.log
+            exit 1
+          fi
+
+      - name: Commit Mesa version update on success
+        if: steps.check-version.outputs.version_changed == 'true'
+        run: |
+          git add flake.nix updater.sh flake.lock
+          if ! git diff --cached --quiet; then
+            MESA_VERSION="${{ steps.mesa-version.outputs.MESA_VERSION }}"
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git commit -m "feat: update Mesa to ${MESA_VERSION}"
+          fi
+
+      - name: Package Mesa
+        env:
+          MESA_VERSION: ${{ steps.mesa-version.outputs.MESA_VERSION }}
+        run: |
+          set -euo pipefail
+
+          archive="mesa-${MESA_VERSION}-x86_64-linux.tar.gz"
+          test -L result-mesa/lib/dri/radeonsi_dri.so
+          test -f "result-mesa/lib/libgallium-${MESA_VERSION}.so"
+          test -f result-mesa/lib/libvulkan_radeon.so
+          test -f result-mesa/share/vulkan/icd.d/radeon_icd.x86_64.json
+          test -f result-mesa/share/glvnd/egl_vendor.d/50_mesa.json
+          test -f result-mesa/lib/gbm/dri_gbm.so
+          tar -czf "$archive" -C "$(readlink -f result-mesa)" .
+          sha256sum "$archive" >"$archive.sha256"
+
+      - name: Attest Mesa archive
+        id: attest
+        uses: actions/attest@v4
+        with:
+          subject-path: mesa-${{ steps.mesa-version.outputs.MESA_VERSION }}-x86_64-linux.tar.gz
+
+      - name: Prepare Mesa attestation asset
+        run: |
+          cp "${{ steps.attest.outputs.bundle-path }}" \
+            mesa-main-build-x86_64-linux.sigstore.json
+
+      - name: Update rolling release tag
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git tag -fa main-build -m 'Rolling release for main branch'
+          git push origin refs/tags/main-build --force
+
+      - name: Upload Mesa release assets
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: main-build
+          name: Main branch build
+          prerelease: true
+          overwrite_files: true
+          files: |
+            mesa-${{ steps.mesa-version.outputs.MESA_VERSION }}-x86_64-linux.tar.gz
+            mesa-${{ steps.mesa-version.outputs.MESA_VERSION }}-x86_64-linux.tar.gz.sha256
+            mesa-main-build-x86_64-linux.sigstore.json
+
+      - name: Update Mesa release metadata
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          PUBLISH_GROUPS: mesa
+        run: |
+          nix run .#update-release-assets
+          git add release-assets.json flake.nix updater.sh flake.lock
+          if git diff --cached --quiet; then
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m "chore: update Mesa prebuilt release metadata"
+          git push origin HEAD:main

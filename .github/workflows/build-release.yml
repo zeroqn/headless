@@ -239,64 +239,14 @@ jobs:
             waypipe-1ac039b4-x86_64-linux.tar.gz.sha256
             waypipe-main-build-x86_64-linux.sigstore.json
 
-  build-mesa:
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Install Nix
-        uses: DeterminateSystems/nix-installer-action@main
-
-      - name: Enable Nix build cache
-        uses: DeterminateSystems/magic-nix-cache-action@main
-
-      - name: Build patched Mesa
-        run: nix build .#mesaReleaseBuild --out-link result-mesa --print-build-logs
-
-      - name: Package Mesa
-        run: |
-          set -euo pipefail
-
-          archive="mesa-26.1.5-x86_64-linux.tar.gz"
-          test -L result-mesa/lib/dri/radeonsi_dri.so
-          test -f result-mesa/lib/libgallium-26.1.5.so
-          test -f result-mesa/lib/libvulkan_radeon.so
-          test -f result-mesa/share/vulkan/icd.d/radeon_icd.x86_64.json
-          test -f result-mesa/share/glvnd/egl_vendor.d/50_mesa.json
-          test -f result-mesa/lib/gbm/dri_gbm.so
-          tar -czf "$archive" -C "$(readlink -f result-mesa)" .
-          sha256sum "$archive" >"$archive.sha256"
-
-      - name: Attest Mesa archive
-        id: attest
-        uses: actions/attest@v4
-        with:
-          subject-path: mesa-26.1.5-x86_64-linux.tar.gz
-
-      - name: Prepare Mesa attestation asset
-        run: |
-          cp "${{ steps.attest.outputs.bundle-path }}" \
-            mesa-main-build-x86_64-linux.sigstore.json
-
-      - name: Upload Mesa publication inputs
-        uses: actions/upload-artifact@v4
-        with:
-          name: publish-mesa
-          path: |
-            mesa-26.1.5-x86_64-linux.tar.gz
-            mesa-26.1.5-x86_64-linux.tar.gz.sha256
-            mesa-main-build-x86_64-linux.sigstore.json
-
   publish:
     needs:
       - build-niri-rio
       - build-sunshine
       - build-moonlight
       - build-waypipe
-      - build-mesa
-    if: always() && (needs.build-niri-rio.result == 'success' || needs.build-sunshine.result == 'success' || needs.build-moonlight.result == 'success' || needs.build-waypipe.result == 'success' || needs.build-mesa.result == 'success')
+
+    if: always() && (needs.build-niri-rio.result == 'success' || needs.build-sunshine.result == 'success' || needs.build-moonlight.result == 'success' || needs.build-waypipe.result == 'success')
     runs-on: ubuntu-latest
     concurrency:
       group: headless-main-build-publisher
@@ -337,12 +287,6 @@ jobs:
           name: publish-waypipe
           path: publish
 
-      - name: Download Mesa publication inputs
-        if: needs.build-mesa.result == 'success'
-        uses: actions/download-artifact@v4
-        with:
-          name: publish-mesa
-          path: publish
 
       - name: Select published package groups
         env:
@@ -350,7 +294,7 @@ jobs:
           SUNSHINE_RESULT: ${{ needs.build-sunshine.result }}
           MOONLIGHT_RESULT: ${{ needs.build-moonlight.result }}
           WAYPIPE_RESULT: ${{ needs.build-waypipe.result }}
-          MESA_RESULT: ${{ needs.build-mesa.result }}
+
         run: |
           set -euo pipefail
           groups=()
@@ -366,9 +310,7 @@ jobs:
           if [[ "$WAYPIPE_RESULT" == success ]]; then
             groups+=(waypipe)
           fi
-          if [[ "$MESA_RESULT" == success ]]; then
-            groups+=(mesa)
-          fi
+
           IFS=,
           echo "PUBLISH_GROUPS=${groups[*]}" >>"$GITHUB_ENV"
 
