@@ -133,8 +133,10 @@
           libxrandr
           libxshmfence
           libxxf86vm
+          systemd
           wayland
           llvmPackages.libllvm
+          xcbutilkeysyms
           zstd
           elfutils
           lm_sensors
