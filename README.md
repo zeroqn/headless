@@ -43,7 +43,7 @@ Import the provided module when NixOS configuration or another module should use
 ```nix
 {
   inputs = {
-    nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-26.05";
     headless.url = "github:zeroqn/headless";
   };
 

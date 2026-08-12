@@ -2,12 +2,9 @@
   description = "Prebuilt Niri headless, Rio, Sunshine, Moonlight Qt, and Waypipe release flake";
 
   inputs = {
-    nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-26.05";
     flake-utils.url = "github:numtide/flake-utils";
-    niri-src = {
-      url = "github:zeroqn/niri/headless";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
+    niri-src.url = "github:zeroqn/niri/headless";
     rio-src = {
       url = "github:raphamorim/rio/d656326020ffe5959e221af7a7d1d8d82a6ab2db";
       inputs.nixpkgs.follows = "nixpkgs";
@@ -31,7 +28,7 @@
           cairo
           dbus
           libGL
-          libdisplay-info_0_3
+          libdisplay-info
           libinput
           seatd
           libgbm
