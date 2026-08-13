@@ -141,6 +141,7 @@
           libpng
           libunwind
           libva-minimal
+          vulkan-loader
           gcc-unwrapped
         ];
 
@@ -251,6 +252,7 @@
         pkgs: system:
         pkgs.callPackage ./mesa/prebuilt-package.nix {
           runtimeDeps = mesaRuntimeDeps pkgs;
+          vulkanLoader = pkgs.vulkan-loader;
           releaseAsset = releaseMeta.packages.mesa.assets.${system} // {
             inherit system;
             inherit (releaseMeta) owner repo;
@@ -332,7 +334,12 @@
             prebuilt.overrideAttrs {
               passthru = (prebuilt.passthru or { }) // {
                 inherit (prev.mesa) driverLink;
-                inherit (prev.mesa) opencl spirv2dxil cross_tools debug;
+                inherit (prev.mesa)
+                  opencl
+                  spirv2dxil
+                  cross_tools
+                  debug
+                  ;
               };
             };
           mesa-headless-bin = final.mesa;
@@ -449,6 +456,25 @@
             assert pkgs.mesa.passthru.cross_tools != null;
             assert pkgs.mesa.passthru.debug != null;
             pkgs.runCommand "mesa-package-metadata" { } "touch $out";
+          mesa-libgallium-runtime-deps =
+            pkgs.runCommand "mesa-libgallium-runtime-deps"
+              {
+                nativeBuildInputs = [ pkgs.binutils ];
+              }
+              ''
+                runpath="$(
+                  readelf -d ${pkgs.mesa}/lib/libgallium*.so \
+                    | sed -n 's/.*Library runpath: \[\(.*\)\]/\1/p'
+                )"
+                echo "libgallium RUNPATH: $runpath"
+                echo "$runpath" | tr ':' '\n' | grep -q vulkan-loader \
+                  || {
+                    echo "FAIL: prebuilt libgallium RUNPATH lacks vulkan-loader, so Zink cannot dlopen libvulkan.so.1"
+                    exit 1
+                  }
+                test -f ${pkgs.vulkan-loader}/lib/libvulkan.so.1
+                touch $out
+              '';
         };
         formatter = pkgs.nixfmt;
       }

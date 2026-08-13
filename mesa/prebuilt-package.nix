@@ -6,6 +6,7 @@
   autoAddDriverRunpath,
   releaseAsset,
   runtimeDeps,
+  vulkanLoader,
 }:
 
 stdenvNoCC.mkDerivation {
@@ -26,6 +27,11 @@ stdenvNoCC.mkDerivation {
 
   buildInputs = map lib.getLib runtimeDeps;
   runtimeDependencies = map lib.getLib runtimeDeps;
+  # Zink dlopens libvulkan.so.1 from libgallium, but auto-patchelf only folds
+  # runtimeDependencies into executables' RUNPATH. Append the loader's lib dir
+  # so the reconstructed shared libraries can reach it, mirroring the source
+  # build's patchelf --add-rpath in mesa's postFixup.
+  appendRunpaths = [ "${lib.getLib vulkanLoader}/lib" ];
 
   unpackPhase = ''
     runHook preUnpack
