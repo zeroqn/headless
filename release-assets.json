@@ -51,7 +51,7 @@
     },
     "moonlight": {
       "version": "main-build-main",
-      "revision": "1d1fe1aac39dd414ed825fe834b84a0e4eea8338",
+      "revision": "2e13ed9977bc31c73caf8428f08f58d793313ece",
       "assets": {
         "x86_64-linux": {
           "name": "moonlight-qt-main-x86_64-linux.tar.gz",
