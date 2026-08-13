@@ -78,7 +78,7 @@
         "x86_64-linux": {
           "name": "mesa-26.1.5-x86_64-linux.tar.gz",
           "url": "https://github.com/zeroqn/headless/releases/download/main-build/mesa-26.1.5-x86_64-linux.tar.gz",
-          "hash": "sha256-Rrt5rI9Jev9zDcJOAOplJMDRMZA0kClUgXRrLAbFQvI="
+          "hash": "sha256-18VJoY0VMiSpdfJ/TVVksS3Z4K60+dNvh0cox7/zW9c="
         }
       }
     }
