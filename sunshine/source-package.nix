@@ -23,11 +23,11 @@ let
   ]);
   src = pkgs.fetchgit {
     url = "https://github.com/LizardByte/Sunshine.git";
-    rev = "9d2409f71b60f1812f482e6dd807dc52e2f72fe7";
-    hash = "sha256-lODpaWwYdDdegLfw0VT+sKRJBasV08B+aMCq/TIJVVs=";
+    rev = "cf52f4b6f33cc9d143f0f6bb67c9891fe3563e54";
+    hash = "sha256-K+6rrfYu/yoQxJRND4QmcL19kbEDBsElz4VjxuACfok=";
     fetchSubmodules = true;
   };
-  version = "2026.07.15.vulkan";
+  version = "2026.08.11.vulkan";
   boostVersion = pkgs.boost.version;
 in
 
@@ -45,7 +45,7 @@ sunshine.overrideAttrs (old: {
     inherit src version;
 
     pname = "sunshine-ui";
-    npmDepsHash = "sha256-LOleKf20fZTAkoQxpvLIuuOkWUnRQQpRbGvoSM8NjeE=";
+    npmDepsHash = "sha256-mBoR2z39MQpUSYdu3Zn93BZTMppq16uO8PaQDku5enc=";
     nodejs = pkgs.nodejs_24;
 
     # keep npm dependency hashing tied to this repo's checked-in lockfile

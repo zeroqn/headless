@@ -5,15 +5,15 @@
 }:
 
 let
-  releaseTag = "v2026.713.132551";
+  releaseTag = "v2026.724.203728";
   platformAssets = {
     x86_64-linux = {
       name = "Linux-x86_64-ffmpeg.tar.gz";
-      hash = "sha256-ZlEkCYV9fBHBiHUZPAmKUTG67AYBacj45jlzh+ehr30=";
+      hash = "sha256-LCfUaUtO0Oc09JfUvWLxs2Ysu8Te0qafLcS3A0Qe67M=";
     };
     aarch64-linux = {
       name = "Linux-aarch64-ffmpeg.tar.gz";
-      hash = "sha256-K9z6Zju3obJBpHZlyUqiiO8uxAxqISzAqOxjkEuIbG0=";
+      hash = "sha256-/WSS9V15rheNuX5I1jlbTKwqLhCy8Vew1ANVz9fBYOg=";
     };
   };
   system = stdenvNoCC.hostPlatform.system;
