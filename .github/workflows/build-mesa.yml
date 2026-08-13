@@ -59,6 +59,12 @@ jobs:
             echo "version_changed=false" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Report Mesa unchanged
+        if: steps.check-version.outputs.version_changed == 'false'
+        run: |
+          MESA_VERSION="${{ steps.mesa-version.outputs.MESA_VERSION }}"
+          echo "Mesa ${MESA_VERSION} is already published and upstream nixpkgs Mesa is unchanged; skipping build."
+
       - name: Confirm workflow commit is current main
         run: |
           git fetch origin main
@@ -74,6 +80,7 @@ jobs:
           sed -i "s/mesa_version=\"\${MESA_VERSION:-[0-9.]*}\"/mesa_version=\"\${MESA_VERSION:-${MESA_VERSION}}\"/" updater.sh
 
       - name: Build patched Mesa
+        if: steps.check-version.outputs.version_changed == 'true'
         env:
           MESA_VERSION: ${{ steps.mesa-version.outputs.MESA_VERSION }}
         run: |
@@ -97,6 +104,7 @@ jobs:
           fi
 
       - name: Package Mesa
+        if: steps.check-version.outputs.version_changed == 'true'
         env:
           MESA_VERSION: ${{ steps.mesa-version.outputs.MESA_VERSION }}
         run: |
@@ -114,16 +122,19 @@ jobs:
 
       - name: Attest Mesa archive
         id: attest
+        if: steps.check-version.outputs.version_changed == 'true'
         uses: actions/attest@v4
         with:
           subject-path: mesa-${{ steps.mesa-version.outputs.MESA_VERSION }}-x86_64-linux.tar.gz
 
       - name: Prepare Mesa attestation asset
+        if: steps.check-version.outputs.version_changed == 'true'
         run: |
           cp "${{ steps.attest.outputs.bundle-path }}" \
             mesa-main-build-x86_64-linux.sigstore.json
 
       - name: Update rolling release tag
+        if: steps.check-version.outputs.version_changed == 'true'
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
@@ -131,6 +142,7 @@ jobs:
           git push origin refs/tags/main-build --force
 
       - name: Upload Mesa release assets
+        if: steps.check-version.outputs.version_changed == 'true'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: main-build
@@ -143,6 +155,7 @@ jobs:
             mesa-main-build-x86_64-linux.sigstore.json
 
       - name: Update Mesa release metadata
+        if: steps.check-version.outputs.version_changed == 'true'
         env:
           GITHUB_TOKEN: ${{ github.token }}
           PUBLISH_GROUPS: mesa
