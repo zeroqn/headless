@@ -41,11 +41,11 @@
         "nixpkgs": "nixpkgs"
       },
       "locked": {
-        "lastModified": 1786331136,
-        "narHash": "sha256-hVsACCzlXGWJDQQyLzSHe2DWjYMh6V/147qlffdCi/w=",
+        "lastModified": 1786610978,
+        "narHash": "sha256-o0neGp3uG4j22uafBB7OQGiHsfnJ1U86xAfeJm3MNmc=",
         "owner": "zeroqn",
         "repo": "niri",
-        "rev": "17a40f79c54aa18e276a3a97970fba0a3567258a",
+        "rev": "1c7028a8b30907f59a638ab833ee6bb0dd70c75d",
         "type": "github"
       },
       "original": {
