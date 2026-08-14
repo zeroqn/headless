@@ -177,6 +177,7 @@ The standalone Moonlight Qt repository is not modified by this repository change
 7. Serializes release publication without deleting the rolling `main-build` release.
 8. Overwrites only assets owned by successful groups, leaving failed groups' existing assets intact.
 9. Updates only the published groups in `release-assets.json`.
+10. Commits the metadata and pushes it with a fetch-and-rebase retry (`push-release-metadata.sh`), so concurrent workflow runs (e.g. the weekly Mesa schedule) integrate instead of failing on a stale `main`.
 
 After publishing assets manually, update all package metadata with:
 

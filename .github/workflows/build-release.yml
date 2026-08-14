@@ -339,13 +339,8 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
-          nix run .#update-release-assets
-          git add release-assets.json
-          if git diff --cached --quiet; then
-            exit 0
-          fi
-          git commit -m "chore: update prebuilt release metadata"
-          git push origin HEAD:main
+          bash push-release-metadata.sh "chore: update prebuilt release metadata" \
+            release-assets.json
 
       - name: Upload combined workflow artifacts
         uses: actions/upload-artifact@v4
