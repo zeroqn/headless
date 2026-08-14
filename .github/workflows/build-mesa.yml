@@ -8,6 +8,12 @@ on:
   schedule:
     - cron: '0 6 * * 1'
   workflow_dispatch:
+    inputs:
+      force_rebuild:
+        description: 'Force a Mesa rebuild even when the Mesa version is unchanged'
+        required: false
+        default: 'false'
+        type: boolean
 
 permissions:
   contents: write
@@ -45,15 +51,33 @@ jobs:
           echo "MESA_VERSION=$MESA_VERSION" >> "$GITHUB_OUTPUT"
           echo "Detected Mesa version: $MESA_VERSION"
 
-      - name: Check current pinned Mesa version
+      - name: Check whether Mesa needs a rebuild
         id: check-version
         env:
           MESA_VERSION: ${{ steps.mesa-version.outputs.MESA_VERSION }}
+          FORCE_REBUILD: ${{ github.event.inputs.force_rebuild }}
         run: |
           CURRENT_VERSION="$(grep -oP 'mesa_version="\$\{MESA_VERSION:-\K[^}]+' updater.sh)"
-          echo "Current pinned: $CURRENT_VERSION"
-          echo "New version:    $MESA_VERSION"
+          LOCKED_REV="$(git show HEAD:flake.lock | jq -r '.nodes.nixpkgs.locked.rev // empty' 2>/dev/null || true)"
+          WORK_REV="$(jq -r '.nodes.nixpkgs.locked.rev // empty' flake.lock 2>/dev/null || true)"
+          echo "Current pinned Mesa:  $CURRENT_VERSION"
+          echo "New Mesa version:     $MESA_VERSION"
+          echo "Committed nixpkgs:    $LOCKED_REV"
+          echo "Lock nixpkgs:         $WORK_REV"
+          CHANGED=false
           if [ "$MESA_VERSION" != "$CURRENT_VERSION" ]; then
+            echo "Mesa version changed ($CURRENT_VERSION -> $MESA_VERSION)"
+            CHANGED=true
+          fi
+          if [ -n "$LOCKED_REV" ] && [ -n "$WORK_REV" ] && [ "$LOCKED_REV" != "$WORK_REV" ]; then
+            echo "nixpkgs input moved ($LOCKED_REV -> $WORK_REV); rebuilding for the new libva/Mesa stack"
+            CHANGED=true
+          fi
+          if [ "$FORCE_REBUILD" = "true" ]; then
+            echo "manual force_rebuild requested"
+            CHANGED=true
+          fi
+          if [ "$CHANGED" = "true" ]; then
             echo "version_changed=true" >> "$GITHUB_OUTPUT"
           else
             echo "version_changed=false" >> "$GITHUB_OUTPUT"
@@ -63,7 +87,7 @@ jobs:
         if: steps.check-version.outputs.version_changed == 'false'
         run: |
           MESA_VERSION="${{ steps.mesa-version.outputs.MESA_VERSION }}"
-          echo "Mesa ${MESA_VERSION} is already published and upstream nixpkgs Mesa is unchanged; skipping build."
+          echo "Mesa ${MESA_VERSION} is already published and neither the Mesa version, the nixpkgs lock, nor a force request changed; skipping build."
 
       - name: Confirm workflow commit is current main
         run: |
