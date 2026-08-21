@@ -12,7 +12,7 @@
         "x86_64-linux": {
           "name": "niri-headless-main-x86_64-linux.tar.gz",
           "url": "https://github.com/zeroqn/headless/releases/download/main-build/niri-headless-main-x86_64-linux.tar.gz",
-          "hash": "sha256-m1TxmH2A5y5Nv9L8HmAhqm4im/J17DvFK180qGW7HyI="
+          "hash": "sha256-DmkyjjAmFEqG/br4fNfNFpB+42Yd3w9honnVSY8wtNY="
         }
       }
     },
@@ -23,7 +23,7 @@
         "x86_64-linux": {
           "name": "rio-d656326-x86_64-linux.tar.gz",
           "url": "https://github.com/zeroqn/headless/releases/download/main-build/rio-d656326-x86_64-linux.tar.gz",
-          "hash": "sha256-WMt/pBTaTDRgau2FKzk45MRjSSiPvkmS/z3VBd/rSYA="
+          "hash": "sha256-34hTBsRrRKj+nc2j7iwpCpNtc1DeP9mvXHFSJDFtKRY="
         }
       }
     },
@@ -34,7 +34,7 @@
         "x86_64-linux": {
           "name": "sunshine-main-x86_64-linux.tar.gz",
           "url": "https://github.com/zeroqn/headless/releases/download/main-build/sunshine-main-x86_64-linux.tar.gz",
-          "hash": "sha256-16qzc237liZGxdEO19EDkux6KLhXFDXzi5Le+zDH+/w="
+          "hash": "sha256-p9qzHP1rCnp4R3NiMWzyuN37DmHR9VqHwcFAVVt2o/c="
         }
       }
     },
@@ -45,7 +45,7 @@
         "x86_64-linux": {
           "name": "sunshine-main-cuda-x86_64-linux.tar.gz",
           "url": "https://github.com/zeroqn/headless/releases/download/main-build/sunshine-main-cuda-x86_64-linux.tar.gz",
-          "hash": "sha256-hRPrsA8a+sNFsmL9LHzbOiuvvtKq/NKKO4S5SNce4pg="
+          "hash": "sha256-BAvEfyWElmBEXoELy+003X8nK5i4jCFxFIsSLlEfLYU="
         }
       }
     },
