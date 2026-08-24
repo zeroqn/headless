@@ -115,7 +115,7 @@
           zstd
         ];
 
-      mesaSourceRevision = "mesa-26.1.5";
+      mesaSourceRevision = "mesa-26.1.8";
 
       mesaRuntimeDeps =
         pkgs: with pkgs; [
