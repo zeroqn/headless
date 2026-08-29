@@ -51,7 +51,11 @@ stdenvNoCC.mkDerivation {
     cp -a . "$out"/
     chmod -R u+w "$out"
 
-    patchShebangs "$out/bin/niri-session"
+    # The tarball ships niri-session with a /nix/store shebang baked in by the
+    # CI source build. Without --update, patchShebangs leaves store shebangs
+    # untouched, so the CI bash path would survive into the reconstructed
+    # package and break once that bash is garbage-collected.
+    patchShebangs --update "$out/bin/niri-session"
 
     service="$out/lib/systemd/user/niri.service"
     if [ -f "$service" ]; then

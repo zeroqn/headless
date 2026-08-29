@@ -61,9 +61,12 @@ stdenvNoCC.mkDerivation {
       fi
     fi
 
-    # Fix shebangs on any Python scripts in bin/
+    # Fix shebangs on any Python scripts in bin/. The tarball ships scripts
+    # whose shebangs were already rewritten to the CI build's /nix/store python
+    # path; --update forces a rewrite to this build's python so the CI path
+    # doesn't survive into the reconstructed package.
     if [ -d "$out/bin" ]; then
-      patchShebangs "$out/bin"
+      patchShebangs --update "$out/bin"
     fi
 
     # Ensure $out/lib is in the RUNPATH
