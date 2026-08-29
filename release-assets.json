@@ -23,7 +23,7 @@
         "x86_64-linux": {
           "name": "rio-d656326-x86_64-linux.tar.gz",
           "url": "https://github.com/zeroqn/headless/releases/download/main-build/rio-d656326-x86_64-linux.tar.gz",
-          "hash": "sha256-34hTBsRrRKj+nc2j7iwpCpNtc1DeP9mvXHFSJDFtKRY="
+          "hash": "sha256-Hr04rht9i5hH4NJZK1SL/WNnd8nglfLXE8dsh4mtyhE="
         }
       }
     },
@@ -34,7 +34,7 @@
         "x86_64-linux": {
           "name": "sunshine-main-x86_64-linux.tar.gz",
           "url": "https://github.com/zeroqn/headless/releases/download/main-build/sunshine-main-x86_64-linux.tar.gz",
-          "hash": "sha256-p9qzHP1rCnp4R3NiMWzyuN37DmHR9VqHwcFAVVt2o/c="
+          "hash": "sha256-Pm3+QJYrcN8ZRFew7j1+RblzT9mZk/fS+g6BPu/gFqg="
         }
       }
     },
@@ -45,7 +45,7 @@
         "x86_64-linux": {
           "name": "sunshine-main-cuda-x86_64-linux.tar.gz",
           "url": "https://github.com/zeroqn/headless/releases/download/main-build/sunshine-main-cuda-x86_64-linux.tar.gz",
-          "hash": "sha256-BAvEfyWElmBEXoELy+003X8nK5i4jCFxFIsSLlEfLYU="
+          "hash": "sha256-/1dlAy2hr//4e/9Ukg8WmYjkHqiCJVaoOf829yT1C2M="
         }
       }
     },
@@ -56,7 +56,7 @@
         "x86_64-linux": {
           "name": "moonlight-qt-main-x86_64-linux.tar.gz",
           "url": "https://github.com/zeroqn/headless/releases/download/main-build/moonlight-qt-main-x86_64-linux.tar.gz",
-          "hash": "sha256-SwALODDWtRpn9DAHIWa3HRo3eDtmBXiyu2VS5HxIDZo="
+          "hash": "sha256-KnGO9oga5Xy4H90a+HEZotLBRZb4G2+PZyq8jnXlyN4="
         }
       }
     },
@@ -67,7 +67,7 @@
         "x86_64-linux": {
           "name": "waypipe-1ac039b4-x86_64-linux.tar.gz",
           "url": "https://github.com/zeroqn/headless/releases/download/main-build/waypipe-1ac039b4-x86_64-linux.tar.gz",
-          "hash": "sha256-9NiG4Mdmwc5mcB3HdNwVWUcCEelyRsqQV5zh6Kf1Z7g="
+          "hash": "sha256-ce7mMslN7YQpGH3MUtplil1lFWGYHKckiOAt4CMG3o4="
         }
       }
     },
