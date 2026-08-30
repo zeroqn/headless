@@ -70,7 +70,7 @@
           "hash": "sha256-ce7mMslN7YQpGH3MUtplil1lFWGYHKckiOAt4CMG3o4="
         }
       }
-},
+    },
     "mimalloc": {
       "version": "3.5.0",
       "revision": "3.5.0",
@@ -78,7 +78,7 @@
         "x86_64-linux": {
           "name": "mimalloc-3.5.0-x86_64-linux.tar.gz",
           "url": "https://github.com/zeroqn/headless/releases/download/main-build/mimalloc-3.5.0-x86_64-linux.tar.gz",
-          "hash": "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+          "hash": "sha256-X8KA6eJKO227HqlgzSxnXgx8tHY5wCMh9WEHhb/UOS0="
         }
       }
     },
