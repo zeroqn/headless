@@ -430,6 +430,7 @@
           mimallocReleaseBuild = pkgs.mimalloc-headless-release-build;
 
           mesa = pkgs.mesa;
+          mesaReleaseBuild = pkgs.mesa-headless-release-build;
         };
 
         apps.update-release-assets = {
@@ -491,7 +492,8 @@
           mesa-package-metadata =
             assert pkgs.mesa == pkgs.mesa-headless-bin;
             assert pkgs.mesa != pkgs.mesa-headless-release-build;
-            assert pkgs.mesa.passthru.sourceRevision == "mesa-26.1.5";
+            assert
+              pkgs.mesa.passthru.sourceRevision == pkgs.mesa-headless-release-build.passthru.sourceRevision;
             assert pkgs.mesa.passthru.driverLink == "/run/opengl-driver";
             assert pkgs.mesa.passthru.opencl != null;
             assert pkgs.mesa.passthru.spirv2dxil != null;
