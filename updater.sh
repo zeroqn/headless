@@ -6,7 +6,7 @@ manifest_path="${1:-release-assets.json}"
 repo="${GITHUB_REPO:-zeroqn/headless}"
 release_tag="${RELEASE_TAG:-main-build}"
 api_url="${GITHUB_API_URL:-https://api.github.com}"
-publish_groups="${PUBLISH_GROUPS:-niri-rio,sunshine,moonlight,waypipe,mesa}"
+publish_groups="${PUBLISH_GROUPS:-niri-rio,sunshine,moonlight,waypipe,mimalloc,mesa}"
 rio_revision="${RIO_REVISION:-d656326020ffe5959e221af7a7d1d8d82a6ab2db}"
 rio_version="${RIO_VERSION:-0.4.12-${rio_revision:0:7}}"
 sunshine_revision="${SUNSHINE_REVISION:-3dfbfe0906cf5970f84b96a1451451eaa2ab1fab}"
@@ -14,6 +14,8 @@ sunshine_version="${SUNSHINE_VERSION:-2026.08.21.vulkan}"
 moonlight_revision="${MOONLIGHT_REVISION:-2e13ed9977bc31c73caf8428f08f58d793313ece}"
 waypipe_revision="${WAYPIPE_REVISION:-1ac039b4d50e2658d284e750c182266cc00efe74}"
 waypipe_version="${WAYPIPE_VERSION:-0.11.0-unstable-2026-06-17}"
+mimalloc_revision="${MIMALLOC_REVISION:-3.5.0}"
+mimalloc_version="${MIMALLOC_VERSION:-3.5.0}"
 mesa_revision="${MESA_REVISION:-mesa-26.1.8}"
 mesa_version="${MESA_VERSION:-26.1.8}"
 
@@ -28,8 +30,8 @@ has_group() {
   [[ ",${publish_groups}," == *",$1,"* ]]
 }
 
-if ! has_group niri-rio && ! has_group sunshine && ! has_group moonlight && ! has_group waypipe && ! has_group mesa; then
-  echo "PUBLISH_GROUPS must include niri-rio, sunshine, moonlight, waypipe, mesa, or a comma-separated combination" >&2
+if ! has_group niri-rio && ! has_group sunshine && ! has_group moonlight && ! has_group waypipe && ! has_group mimalloc && ! has_group mesa; then
+  echo "PUBLISH_GROUPS must include niri-rio, sunshine, moonlight, waypipe, mimalloc, mesa, or a comma-separated combination" >&2
   exit 1
 fi
 
@@ -221,6 +223,28 @@ if has_group waypipe; then
           version: $version,
           revision: $revision,
           assets: ($waypipe_assets[0] | from_entries)
+        }
+    ' "$workdir/manifest.json" >"$workdir/manifest.next.json"
+  mv "$workdir/manifest.next.json" "$workdir/manifest.json"
+fi
+
+if has_group mimalloc; then
+  collect_assets mimalloc "mimalloc-${mimalloc_version}-"
+
+  jq \
+    --arg owner "$owner" \
+    --arg repo "$repo_name" \
+    --arg tag "$release_tag" \
+    --arg version "$mimalloc_version" \
+    --arg revision "$mimalloc_revision" \
+    --slurpfile mimalloc_assets "$workdir/mimalloc-assets.json" '
+      .owner = $owner
+      | .repo = $repo
+      | .release.tag = $tag
+      | .packages.mimalloc = {
+          version: $version,
+          revision: $revision,
+          assets: ($mimalloc_assets[0] | from_entries)
         }
     ' "$workdir/manifest.json" >"$workdir/manifest.next.json"
   mv "$workdir/manifest.next.json" "$workdir/manifest.json"

@@ -1,5 +1,5 @@
 {
-  description = "Prebuilt Niri headless, Rio, Sunshine, Moonlight Qt, and Waypipe release flake";
+  description = "Prebuilt Niri headless, Rio, Sunshine, Moonlight Qt, Waypipe, and mimalloc release flake";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-26.05";
@@ -114,6 +114,10 @@
           vulkan-loader
           zstd
         ];
+
+      mimallocVersion = "3.5.0";
+
+      mimallocRuntimeDeps = pkgs: [ ];
 
       mesaSourceRevision = "mesa-26.1.8";
 
@@ -247,6 +251,31 @@
             sourceRevision = waypipeRevision;
           };
         });
+      mkMimallocBinaryPackage =
+        pkgs: system:
+        pkgs.callPackage ./mimalloc/prebuilt-package.nix {
+          runtimeDeps = [ ];
+          releaseAsset = releaseMeta.packages.mimalloc.assets.${system} // {
+            inherit system;
+            inherit (releaseMeta) owner repo;
+            inherit (releaseMeta.release) tag;
+            inherit (releaseMeta.packages.mimalloc) version;
+          };
+        };
+      mkMimallocSourceBuild =
+        pkgs:
+        pkgs.mimalloc.overrideAttrs (finalAttrs: {
+          version = mimallocVersion;
+          src = pkgs.fetchFromGitHub {
+            owner = "microsoft";
+            repo = "mimalloc";
+            tag = "v${mimallocVersion}";
+            hash = "sha256-1cHcEjcnzyJaEohtMoC3h7EdXSLE1lHCnq8kURXIx/E=";
+          };
+          passthru = (finalAttrs.passthru or { }) // {
+            sourceRevision = mimallocVersion;
+          };
+        });
 
       mkMesaBinaryPackage =
         pkgs: system:
@@ -283,6 +312,7 @@
           hasSunshineCudaBinary = builtins.hasAttr system releaseMeta.packages."sunshine-cuda".assets;
           hasMoonlightBinary = builtins.hasAttr system releaseMeta.packages.moonlight.assets;
           hasWaypipeBinary = builtins.hasAttr system releaseMeta.packages.waypipe.assets;
+          hasMimallocBinary = builtins.hasAttr system releaseMeta.packages.mimalloc.assets;
           hasMesaBinary = builtins.hasAttr system releaseMeta.packages.mesa.assets;
         in
         {
@@ -302,6 +332,7 @@
           sunshine-headless-release-build-cuda = mkSunshineSourceBuild prev true;
           moonlight-headless-release-build = mkMoonlightSourceBuild prev;
           waypipe-headless-release-build = mkWaypipeSourceBuild prev;
+          mimalloc-headless-release-build = mkMimallocSourceBuild prev;
           mesa-headless-release-build = mkMesaSourceBuild prev;
         }
         // prev.lib.optionalAttrs hasNiriBinary {
@@ -325,6 +356,10 @@
         // prev.lib.optionalAttrs hasWaypipeBinary {
           waypipe = mkWaypipeBinaryPackage prev system;
           waypipe-bin = final.waypipe;
+        }
+        // prev.lib.optionalAttrs hasMimallocBinary {
+          mimalloc = mkMimallocBinaryPackage prev system;
+          mimalloc-bin = final.mimalloc;
         }
         // prev.lib.optionalAttrs hasMesaBinary {
           mesa =
@@ -390,9 +425,11 @@
           waypipe-bin = pkgs.waypipe-bin;
           waypipeReleaseBuild = pkgs.waypipe-headless-release-build;
 
+          mimalloc = pkgs.mimalloc;
+          mimalloc-bin = pkgs.mimalloc-bin;
+          mimallocReleaseBuild = pkgs.mimalloc-headless-release-build;
+
           mesa = pkgs.mesa;
-          mesa-headless-bin = pkgs.mesa-headless-bin;
-          mesaReleaseBuild = pkgs.mesa-headless-release-build;
         };
 
         apps.update-release-assets = {
@@ -446,6 +483,11 @@
               pkgs.waypipe-headless-release-build.passthru.sourceRevision
               == "1ac039b4d50e2658d284e750c182266cc00efe74";
             pkgs.runCommand "waypipe-package-metadata" { } "touch $out";
+          mimalloc-package-metadata =
+            assert pkgs.mimalloc == pkgs.mimalloc-bin;
+            assert pkgs.mimalloc.version == "3.5.0";
+            assert pkgs.mimalloc-headless-release-build.passthru.sourceRevision == "3.5.0";
+            pkgs.runCommand "mimalloc-package-metadata" { } "touch $out";
           mesa-package-metadata =
             assert pkgs.mesa == pkgs.mesa-headless-bin;
             assert pkgs.mesa != pkgs.mesa-headless-release-build;

@@ -7,6 +7,7 @@ This repository builds and publishes prebuilt Nix package outputs for:
 - Standard and CUDA-enabled Sunshine from the pinned source in `sunshine/source-package.nix`.
 - Moonlight Qt commit [`2e13ed9`](https://github.com/moonlight-stream/moonlight-qt/commit/2e13ed9977bc31c73caf8428f08f58d793313ece).
 - Waypipe commit [`1ac039b4`](https://gitlab.freedesktop.org/mstoeckl/waypipe/-/commit/1ac039b4d50e2658d284e750c182266cc00efe74).
+- mimalloc `3.5.0` ([microsoft/mimalloc](https://github.com/microsoft/mimalloc/releases/tag/v3.5.0)), newer than the `3.3.2` shipped by nixpkgs.
 - Patched Mesa `26.1.5` from the pinned nixpkgs with `patches/mesa-headless-virtio-modifiers.patch` appended (AMD virtio-gpu DMA-BUF modifier fix for radeonsi).
 
 Downstream NixOS systems install the release packages without compiling them locally.
@@ -30,6 +31,9 @@ Downstream NixOS systems install the release packages without compiling them loc
 - `packages.x86_64-linux.waypipe`
 - `packages.x86_64-linux.waypipe-bin`
 - `packages.x86_64-linux.waypipeReleaseBuild`
+- `packages.x86_64-linux.mimalloc`
+- `packages.x86_64-linux.mimalloc-bin`
+- `packages.x86_64-linux.mimallocReleaseBuild`
 - `packages.x86_64-linux.mesa`
 - `packages.x86_64-linux.mesa-headless-bin`
 - `packages.x86_64-linux.mesaReleaseBuild`
@@ -38,7 +42,7 @@ The default package remains Niri. `sunshine` and `sunshine-bin` are the standard
 
 ## Downstream NixOS usage
 
-Import the provided module when NixOS configuration or another module should use the prebuilt `pkgs.niri`, `pkgs.sunshine`, `pkgs.moonlight-qt`, and `pkgs.waypipe` packages:
+Import the provided module when NixOS configuration or another module should use the prebuilt `pkgs.niri`, `pkgs.sunshine`, `pkgs.moonlight-qt`, `pkgs.waypipe`, and `pkgs.mimalloc` packages:
 
 ```nix
 {
@@ -65,6 +69,7 @@ Import the provided module when NixOS configuration or another module should use
             pkgs.rio-headless-bin
             pkgs.moonlight-qt
             pkgs.waypipe
+            pkgs.mimalloc
           ];
 
           hardware.graphics.enable = true;
@@ -75,7 +80,7 @@ Import the provided module when NixOS configuration or another module should use
 }
 ```
 
-The overlay does not replace nixpkgs `pkgs.rio`; Rio is exposed as `pkgs.rio-headless-bin`. The overlay replaces nixpkgs `pkgs.waypipe` with the prebuilt package and also exposes the same package as `pkgs.waypipe-bin`. The overlay replaces nixpkgs `pkgs.mesa` with the patched prebuilt package and exposes the same package as `pkgs.mesa-headless-bin`, so `hardware.graphics.package` (which defaults to `pkgs.mesa`) resolves to the patched Mesa on AMD virtio-gpu native-context guests. Packages that build against `pkgs.mesa`'s non-`out` outputs should use `pkgs.mesa-headless-release-build` instead.
+The overlay does not replace nixpkgs `pkgs.rio`; Rio is exposed as `pkgs.rio-headless-bin`. The overlay replaces nixpkgs `pkgs.waypipe` with the prebuilt package and also exposes the same package as `pkgs.waypipe-bin`. The overlay replaces nixpkgs `pkgs.mimalloc` with the prebuilt package and exposes the same package as `pkgs.mimalloc-bin`, so a downstream allocator override such as `nixpkgs.config.packageOverrides` or an `LD_PRELOAD=libmimalloc.so` wrapper resolves to mimalloc 3.5.0 instead of the 3.3.2 in nixpkgs. The overlay replaces nixpkgs `pkgs.mesa` with the patched prebuilt package and exposes the same package as `pkgs.mesa-headless-bin`, so `hardware.graphics.package` (which defaults to `pkgs.mesa`) resolves to the patched Mesa on AMD virtio-gpu native-context guests. Packages that build against `pkgs.mesa`'s non-`out` outputs should use `pkgs.mesa-headless-release-build` instead.
 
 For a CUDA-enabled Sunshine service, allow unfree packages in the downstream Nixpkgs configuration and select the CUDA package explicitly:
 
@@ -106,6 +111,7 @@ environment.systemPackages = [
   headless.packages.${pkgs.system}.sunshine-bin
   headless.packages.${pkgs.system}.moonlight-qt
   headless.packages.${pkgs.system}.waypipe
+  headless.packages.${pkgs.system}.mimalloc
 ];
 
 hardware.graphics.package = headless.packages.${pkgs.system}.mesa;
@@ -172,12 +178,13 @@ The standalone Moonlight Qt repository is not modified by this repository change
 2. Builds standard and CUDA Sunshine in a separate package group.
 3. Builds Moonlight Qt in an independent package group.
 4. Builds Waypipe in an independent package group.
-5. Builds patched Mesa in an independent package group.
-6. Packages, checksums, and attests each successful group.
-7. Serializes release publication without deleting the rolling `main-build` release.
-8. Overwrites only assets owned by successful groups, leaving failed groups' existing assets intact.
-9. Updates only the published groups in `release-assets.json`.
-10. Commits the metadata and pushes it with a fetch-and-rebase retry (`push-release-metadata.sh`), so concurrent workflow runs (e.g. the weekly Mesa schedule) integrate instead of failing on a stale `main`.
+5. Builds mimalloc in an independent package group.
+6. Builds patched Mesa in an independent package group.
+7. Packages, checksums, and attests each successful group.
+8. Serializes release publication without deleting the rolling `main-build` release.
+9. Overwrites only assets owned by successful groups, leaving failed groups' existing assets intact.
+10. Updates only the published groups in `release-assets.json`.
+11. Commits the metadata and pushes it with a fetch-and-rebase retry (`push-release-metadata.sh`), so concurrent workflow runs (e.g. the weekly Mesa schedule) integrate instead of failing on a stale `main`.
 
 After publishing assets manually, update all package metadata with:
 
@@ -192,5 +199,6 @@ PUBLISH_GROUPS=sunshine nix run .#update-release-assets
 PUBLISH_GROUPS=niri-rio nix run .#update-release-assets
 PUBLISH_GROUPS=moonlight nix run .#update-release-assets
 PUBLISH_GROUPS=waypipe nix run .#update-release-assets
+PUBLISH_GROUPS=mimalloc nix run .#update-release-assets
 PUBLISH_GROUPS=mesa nix run .#update-release-assets
 ```

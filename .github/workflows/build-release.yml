@@ -239,14 +239,61 @@ jobs:
             waypipe-1ac039b4-x86_64-linux.tar.gz.sha256
             waypipe-main-build-x86_64-linux.sigstore.json
 
+  build-mimalloc:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Nix
+        uses: DeterminateSystems/nix-installer-action@main
+
+      - name: Enable Nix build cache
+        uses: DeterminateSystems/magic-nix-cache-action@main
+
+      - name: Build mimalloc
+        run: nix build .#mimallocReleaseBuild --out-link result-mimalloc --print-build-logs
+
+      - name: Package mimalloc
+        run: |
+          set -euo pipefail
+
+          archive="mimalloc-3.5.0-x86_64-linux.tar.gz"
+          test -e result-mimalloc/lib/libmimalloc.so
+          test -e result-mimalloc/lib/libmimalloc.so.3
+          tar -czf "$archive" -C "$(readlink -f result-mimalloc)" .
+          sha256sum "$archive" >"$archive.sha256"
+
+      - name: Attest mimalloc archive
+        id: attest
+        uses: actions/attest@v4
+        with:
+          subject-path: mimalloc-3.5.0-x86_64-linux.tar.gz
+
+      - name: Prepare mimalloc attestation asset
+        run: |
+          cp "${{ steps.attest.outputs.bundle-path }}" \
+            mimalloc-main-build-x86_64-linux.sigstore.json
+
+      - name: Upload mimalloc publication inputs
+        uses: actions/upload-artifact@v4
+        with:
+          name: publish-mimalloc
+          path: |
+            mimalloc-3.5.0-x86_64-linux.tar.gz
+            mimalloc-3.5.0-x86_64-linux.tar.gz.sha256
+            mimalloc-main-build-x86_64-linux.sigstore.json
+
   publish:
     needs:
       - build-niri-rio
       - build-sunshine
       - build-moonlight
       - build-waypipe
+      - build-mimalloc
 
-    if: always() && (needs.build-niri-rio.result == 'success' || needs.build-sunshine.result == 'success' || needs.build-moonlight.result == 'success' || needs.build-waypipe.result == 'success')
+    if: always() && (needs.build-niri-rio.result == 'success' || needs.build-sunshine.result == 'success' || needs.build-moonlight.result == 'success' || needs.build-waypipe.result == 'success' || needs.build-mimalloc.result == 'success')
     runs-on: ubuntu-latest
     concurrency:
       group: headless-main-build-publisher
@@ -287,6 +334,12 @@ jobs:
           name: publish-waypipe
           path: publish
 
+      - name: Download mimalloc publication inputs
+        if: needs.build-mimalloc.result == 'success'
+        uses: actions/download-artifact@v4
+        with:
+          name: publish-mimalloc
+          path: publish
 
       - name: Select published package groups
         env:
@@ -294,6 +347,7 @@ jobs:
           SUNSHINE_RESULT: ${{ needs.build-sunshine.result }}
           MOONLIGHT_RESULT: ${{ needs.build-moonlight.result }}
           WAYPIPE_RESULT: ${{ needs.build-waypipe.result }}
+          MIMALLOC_RESULT: ${{ needs.build-mimalloc.result }}
 
         run: |
           set -euo pipefail
@@ -309,6 +363,9 @@ jobs:
           fi
           if [[ "$WAYPIPE_RESULT" == success ]]; then
             groups+=(waypipe)
+          fi
+          if [[ "$MIMALLOC_RESULT" == success ]]; then
+            groups+=(mimalloc)
           fi
 
           IFS=,
