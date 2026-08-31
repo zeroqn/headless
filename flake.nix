@@ -439,6 +439,25 @@
         };
 
         checks = {
+          # Every attribute below is referenced by the release workflows
+          # (build-mesa.yml, build-release.yml) via `nix build .#<name>` or
+          # `nix eval .#<name>`. Dropping one from packages silently breaks CI,
+          # so assert they all exist here.
+          packages-output-contract =
+            let
+              ciRequired = [
+                "releaseBuild"
+                "rioReleaseBuild"
+                "sunshineReleaseBuild"
+                "sunshineReleaseBuildCuda"
+                "moonlightReleaseBuild"
+                "waypipeReleaseBuild"
+                "mimallocReleaseBuild"
+                "mesaReleaseBuild"
+              ];
+            in
+            assert builtins.all (a: self.packages.${system} ? ${a}) ciRequired;
+            pkgs.runCommand "packages-output-contract" { } "touch $out";
           session-package-metadata =
             assert pkgs.niri.providedSessions == [ "niri" ];
             pkgs.runCommand "niri-session-package-metadata" { } "touch $out";
