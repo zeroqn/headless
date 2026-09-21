@@ -1,0 +1,163 @@
+From 6114d4b2825ec8c79520506cbee32d1f62dab64e Mon Sep 17 00:00:00 2001
+From: Pablo Rodriguez <pablo-tech@users.noreply.github.com>
+Date: Fri, 18 Sep 2026 08:03:36 -0700
+Subject: [PATCH 1/2] perf(linux): capture wlr screencopy frames with damage
+
+Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>
+---
+ src/platform/linux/wayland.cpp |  5 +++--
+ src/platform/linux/wlgrab.cpp  | 16 ++++++++++++++--
+ 2 files changed, 17 insertions(+), 4 deletions(-)
+
+diff --git a/src/platform/linux/wayland.cpp b/src/platform/linux/wayland.cpp
+index e73bbae0..68530031 100644
+--- a/src/platform/linux/wayland.cpp
++++ b/src/platform/linux/wayland.cpp
+@@ -555,9 +555,10 @@ namespace wl {
+     // Store for cleanup
+     self->current_wl_buffer = buffer;
+ 
+-    // Start the actual copy
++    // Start the actual copy. With damage, the compositor completes it on the next change to the output instead of
++    // redrawing the whole output for it, so an unchanged screen costs nothing to capture.
+     zwp_linux_buffer_params_v1_destroy(params);
+-    zwlr_screencopy_frame_v1_copy(frame, buffer);
++    zwlr_screencopy_frame_v1_copy_with_damage(frame, buffer);
+   }
+ 
+   // Buffer params failed callback
+diff --git a/src/platform/linux/wlgrab.cpp b/src/platform/linux/wlgrab.cpp
+index a1a5c923..fd14d880 100644
+--- a/src/platform/linux/wlgrab.cpp
++++ b/src/platform/linux/wlgrab.cpp
+@@ -180,9 +180,21 @@ namespace wl {
+     inline platf::capture_e snapshot(const pull_free_image_cb_t &pull_free_image_cb, std::shared_ptr<platf::img_t> &img_out, std::chrono::milliseconds timeout, bool cursor) {
+       auto to = std::chrono::steady_clock::now() + timeout;
+ 
++      // A frame copied with damage stays pending until the output changes, so after a timeout it is still in flight:
++      // keep waiting on it rather than requesting another, which would replace the buffer it is being copied into.
++      if (dmabuf.status != dmabuf_t::WAITING) {
++        const std::map<std::uint32_t, std::vector<std::uint64_t>> *enc_mods = encoder_modifiers.empty() ? nullptr : &encoder_modifiers;
++        dmabuf.listen(
++          interface.screencopy_manager,
++          interface.dmabuf_interface,
++          &interface.supported_modifiers,
++          enc_mods,
++          output,
++          cursor
++        );
++      }
++
+       // Dispatch events until we get a new frame or the timeout expires
+-      const std::map<std::uint32_t, std::vector<std::uint64_t>> *enc_mods = encoder_modifiers.empty() ? nullptr : &encoder_modifiers;
+-      dmabuf.listen(interface.screencopy_manager, interface.dmabuf_interface, &interface.supported_modifiers, enc_mods, output, cursor);
+       do {
+         auto remaining_time_ms = std::chrono::duration_cast<std::chrono::milliseconds>(to - std::chrono::steady_clock::now());
+         if (remaining_time_ms.count() < 0 || !display.dispatch(remaining_time_ms)) {
+-- 
+2.54.0
+
+
+From df21f2016ad82ad3f5897e1cc8a32cc65e582319 Mon Sep 17 00:00:00 2001
+From: Pablo Rodriguez <pablo-tech@users.noreply.github.com>
+Date: Fri, 18 Sep 2026 08:29:53 -0700
+Subject: [PATCH 2/2] test(linux): cover the wlr pending-frame guard and
+ document capture on damage
+
+Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>
+---
+ docs/configuration.md                      |  3 ++-
+ src/platform/linux/wayland.h               | 11 +++++++++++
+ src/platform/linux/wlgrab.cpp              |  6 +++++-
+ tests/unit/platform/linux/test_wayland.cpp | 15 +++++++++++++++
+ 4 files changed, 33 insertions(+), 2 deletions(-)
+
+diff --git a/docs/configuration.md b/docs/configuration.md
+index 7b0ff4da..4eb74577 100644
+--- a/docs/configuration.md
++++ b/docs/configuration.md
+@@ -2204,7 +2204,8 @@ supported on the current platform.
+     <tr>
+         <td>wlr</td>
+         <td>Capture for wlroots based Wayland compositors via wlr-screencopy-unstable-v1. It is possible to capture
+-            virtual displays in e.g. Hyprland using this method.
++            virtual displays in e.g. Hyprland using this method. Frames are captured only when the display changes, so
++            an idle display costs the compositor no redraws.
+             @note{Applies to Linux only.}</td>
+     </tr>
+     <tr>
+diff --git a/src/platform/linux/wayland.h b/src/platform/linux/wayland.h
+index 3474705c..38803581 100644
+--- a/src/platform/linux/wayland.h
++++ b/src/platform/linux/wayland.h
+@@ -230,6 +230,17 @@ namespace wl {
+     bool y_invert {false};
+   };
+ 
++  /**
++   * @brief Determine whether a capture should request a new screencopy frame.
++   *
++   * Frames are copied with damage, so the compositor holds a request until the output changes. A capture that timed
++   * out still has that request in flight, and requesting another would replace the buffer it is being copied into.
++   *
++   * @param status State of the current screencopy request.
++   * @return `true` unless a requested frame is still pending.
++   */
++  bool should_request_frame(dmabuf_t::status_e status);
++
+   /**
+    * @brief Wayland output metadata used to match a configured display name.
+    */
+diff --git a/src/platform/linux/wlgrab.cpp b/src/platform/linux/wlgrab.cpp
+index fd14d880..ea902117 100644
+--- a/src/platform/linux/wlgrab.cpp
++++ b/src/platform/linux/wlgrab.cpp
+@@ -39,6 +39,10 @@ namespace wl {
+     return false;
+   }
+ 
++  bool should_request_frame(dmabuf_t::status_e status) {
++    return status != dmabuf_t::WAITING;
++  }
++
+   /**
+    * @brief Captured frame buffer shared between capture and encode stages.
+    */
+@@ -182,7 +186,7 @@ namespace wl {
+ 
+       // A frame copied with damage stays pending until the output changes, so after a timeout it is still in flight:
+       // keep waiting on it rather than requesting another, which would replace the buffer it is being copied into.
+-      if (dmabuf.status != dmabuf_t::WAITING) {
++      if (should_request_frame(dmabuf.status)) {
+         const std::map<std::uint32_t, std::vector<std::uint64_t>> *enc_mods = encoder_modifiers.empty() ? nullptr : &encoder_modifiers;
+         dmabuf.listen(
+           interface.screencopy_manager,
+diff --git a/tests/unit/platform/linux/test_wayland.cpp b/tests/unit/platform/linux/test_wayland.cpp
+index 98b221a9..e8d50e62 100644
+--- a/tests/unit/platform/linux/test_wayland.cpp
++++ b/tests/unit/platform/linux/test_wayland.cpp
+@@ -104,6 +104,21 @@ TEST(WaylandCaptureTest, UsesVramForCudaOnlyWhenCudaSupportIsBuilt) {
+   #endif
+ }
+ 
++TEST(WaylandCaptureTest, RequestsTheFirstFrame) {
++  wl::dmabuf_t dmabuf;
++
++  EXPECT_TRUE(wl::should_request_frame(dmabuf.status));
++}
++
++TEST(WaylandCaptureTest, WaitsOnAFramePendingDamage) {
++  EXPECT_FALSE(wl::should_request_frame(wl::dmabuf_t::WAITING));
++}
++
++TEST(WaylandCaptureTest, RequestsAFrameOnceTheLastOneCompleted) {
++  EXPECT_TRUE(wl::should_request_frame(wl::dmabuf_t::READY));
++  EXPECT_TRUE(wl::should_request_frame(wl::dmabuf_t::REINIT));
++}
++
+ TEST(WaylandInterfaceTest, RecordsOnlyExplicitDmabufModifiers) {
+   constexpr std::uint32_t format = DRM_FORMAT_XRGB8888;
+   constexpr std::uint64_t explicit_modifier = 0x100000000000004;
+-- 
+2.54.0
+

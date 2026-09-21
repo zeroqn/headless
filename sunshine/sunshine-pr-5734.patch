@@ -1,0 +1,401 @@
+From 84ecd1f066dbc7b118702cd227b1221ec42923c5 Mon Sep 17 00:00:00 2001
+From: neatnoise <neatnoise@gmail.com>
+Date: Wed, 16 Sep 2026 15:29:44 +0200
+Subject: [PATCH] feat(linux/wlr): enable Vulkan encoding for wlroots capture
+
+Intersect Vulkan driver modifiers with compositor modifiers before
+creating GBM buffers to ensure compatible buffer formats.
+---
+ README.md                            |   2 +-
+ src/platform/linux/vulkan_encode.cpp | 127 +++++++++++++++++++++++++++
+ src/platform/linux/vulkan_encode.h   |  14 +++
+ src/platform/linux/wayland.cpp       |  50 ++++++++++-
+ src/platform/linux/wayland.h         |   5 +-
+ src/platform/linux/wlgrab.cpp        |  30 ++++++-
+ 6 files changed, 223 insertions(+), 5 deletions(-)
+
+diff --git a/README.md b/README.md
+index ccb5c3b3794..6edfa14d273 100644
+--- a/README.md
++++ b/README.md
+@@ -331,7 +331,7 @@ LizardByte has the full documentation hosted on [Read the Docs](https://docs.liz
+     <tr>
+         <td>Wayland (wlroots)</td>
+         <td>✅</td>
+-        <td>❌</td>
++        <td>✅</td>
+         <td>✅</td>
+         <td>✅</td>
+     </tr>
+diff --git a/src/platform/linux/vulkan_encode.cpp b/src/platform/linux/vulkan_encode.cpp
+index 1e6a78994e4..cf5e9c9272f 100644
+--- a/src/platform/linux/vulkan_encode.cpp
++++ b/src/platform/linux/vulkan_encode.cpp
+@@ -7,6 +7,7 @@
+ #include <array>
+ #include <cstdint>
+ #include <drm_fourcc.h>
++#include <map>
+ #include <sys/stat.h>
+ #if defined(__FreeBSD__)
+   #include <sys/types.h>
+@@ -39,6 +40,132 @@ using namespace std::literals;
+ 
+ namespace vk {
+ 
++  /**
++   * @brief Find Vulkan physical device matching a render node path.
++   *
++   * @param devs List of Vulkan physical devices.
++   * @param render_path Path to render node (e.g. /dev/dri/renderD128).
++   * @return Matching device, or devs[0] if no match found.
++   */
++  static VkPhysicalDevice find_device_by_render_node(const std::vector<VkPhysicalDevice> &devs, const std::string &render_path) {
++    if (render_path.empty() || render_path[0] != '/') {
++      return devs[0];
++    }
++
++    struct stat node_stat;
++    if (stat(render_path.c_str(), &node_stat) != 0) {
++      return devs[0];
++    }
++
++    auto target_major = major(node_stat.st_rdev);
++    auto target_minor = minor(node_stat.st_rdev);
++
++    for (const auto &dev : devs) {
++      VkPhysicalDeviceDrmPropertiesEXT drm = {.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DRM_PROPERTIES_EXT};
++      VkPhysicalDeviceProperties2 props2 = {.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2};
++      props2.pNext = &drm;
++      vkGetPhysicalDeviceProperties2(dev, &props2);
++
++      if (drm.hasRender && drm.renderMajor == (int64_t) target_major && drm.renderMinor == (int64_t) target_minor) {
++        return dev;
++      }
++    }
++
++    return devs[0];
++  }
++
++  /**
++   * @brief Query supported modifiers for a single format.
++   *
++   * @param phys_dev Vulkan physical device.
++   * @param vk_fmt Vulkan format to query.
++   * @return Vector of supported modifiers, or empty if none.
++   */
++  static std::vector<std::uint64_t> query_format_modifiers(VkPhysicalDevice phys_dev, VkFormat vk_fmt) {
++    VkDrmFormatModifierPropertiesListEXT mod_list = {.sType = VK_STRUCTURE_TYPE_DRM_FORMAT_MODIFIER_PROPERTIES_LIST_EXT};
++    VkFormatProperties2 fmt_props2 = {.sType = VK_STRUCTURE_TYPE_FORMAT_PROPERTIES_2};
++    fmt_props2.pNext = &mod_list;
++
++    vkGetPhysicalDeviceFormatProperties2(phys_dev, vk_fmt, &fmt_props2);
++
++    if (mod_list.drmFormatModifierCount == 0) {
++      return {};
++    }
++
++    std::vector<VkDrmFormatModifierPropertiesEXT> mod_props(mod_list.drmFormatModifierCount);
++    mod_list.pDrmFormatModifierProperties = mod_props.data();
++    vkGetPhysicalDeviceFormatProperties2(phys_dev, vk_fmt, &fmt_props2);
++
++    std::vector<std::uint64_t> modifiers;
++    modifiers.reserve(mod_props.size());
++    for (const auto &mp : mod_props) {
++      // Only include modifiers that support sampled images (needed for compute shader input)
++      if (mp.drmFormatModifierTilingFeatures & VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT) {
++        modifiers.push_back(mp.drmFormatModifier);
++      }
++    }
++
++    return modifiers;
++  }
++
++  /**
++   * @brief Query DRM format modifiers supported by the Vulkan driver for common capture formats.
++   *
++   * Creates a temporary Vulkan instance and physical device to query modifier support
++   * via VK_EXT_image_drm_format_modifier extension.
++   *
++   * @return Map of DRM format to supported modifiers, or empty map if query fails.
++   */
++  std::map<std::uint32_t, std::vector<std::uint64_t>> get_supported_capture_modifiers() {
++    std::map<std::uint32_t, std::vector<std::uint64_t>> result;
++
++    // Create temporary Vulkan instance
++    VkApplicationInfo app = {.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO};
++    app.apiVersion = VK_API_VERSION_1_1;
++
++    VkInstanceCreateInfo ci = {.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO};
++    ci.pApplicationInfo = &app;
++    VkInstance inst = VK_NULL_HANDLE;
++    if (vkCreateInstance(&ci, nullptr, &inst) != VK_SUCCESS) {
++      BOOST_LOG(warning) << "[vulkan] Failed to create instance for modifier query"sv;
++      return result;
++    }
++
++    // Get physical devices
++    uint32_t count = 0;
++    vkEnumeratePhysicalDevices(inst, &count, nullptr);
++    if (count == 0) {
++      vkDestroyInstance(inst, nullptr);
++      return result;
++    }
++
++    std::vector<VkPhysicalDevice> devs(count);
++    vkEnumeratePhysicalDevices(inst, &count, devs.data());
++
++    // Find the device matching the render node that will be used for encoding
++    VkPhysicalDevice phys_dev = find_device_by_render_node(devs, platf::resolve_render_device());
++
++    // Common capture formats (ARGB/XRGB variants)
++    static const std::array<std::pair<uint32_t, VkFormat>, 4> formats_to_query = {{
++      {DRM_FORMAT_ARGB8888, VK_FORMAT_B8G8R8A8_UNORM},
++      {DRM_FORMAT_XRGB8888, VK_FORMAT_B8G8R8A8_UNORM},
++      {DRM_FORMAT_ABGR8888, VK_FORMAT_R8G8B8A8_UNORM},
++      {DRM_FORMAT_XBGR8888, VK_FORMAT_R8G8B8A8_UNORM},
++    }};
++
++    for (const auto &[drm_fmt, vk_fmt] : formats_to_query) {
++      auto modifiers = query_format_modifiers(phys_dev, vk_fmt);
++      if (!modifiers.empty()) {
++        BOOST_LOG(debug) << "[vulkan] Format 0x"sv << std::hex << drm_fmt << std::dec
++                         << " has "sv << modifiers.size() << " supported modifiers"sv;
++        result[drm_fmt] = std::move(modifiers);
++      }
++    }
++
++    vkDestroyInstance(inst, nullptr);
++    return result;
++  }
++
+   // Match a DRI render node path to a Vulkan device index via VK_EXT_physical_device_drm.
+   // Returns the index as a string (e.g. "1"), or empty string if no match.
+   static std::string find_vulkan_index_for_render_node(const char *render_path) {
+diff --git a/src/platform/linux/vulkan_encode.h b/src/platform/linux/vulkan_encode.h
+index eb3dce33cd6..a8a0028bda2 100644
+--- a/src/platform/linux/vulkan_encode.h
++++ b/src/platform/linux/vulkan_encode.h
+@@ -6,10 +6,24 @@
+ 
+ #include "src/platform/common.h"
+ 
++#include <cstdint>
++#include <map>
++#include <vector>
++
+ extern "C" struct AVBufferRef;
+ 
+ namespace vk {
+ 
++  /**
++   * @brief Query DRM format modifiers supported by the Vulkan driver for common capture formats.
++   *
++   * This queries the Vulkan driver for modifiers it can import via VK_EXT_image_drm_format_modifier.
++   * The returned map is keyed by DRM fourcc format code (e.g. DRM_FORMAT_ARGB8888).
++   *
++   * @return Map of DRM format to supported modifiers, or empty map if query fails.
++   */
++  std::map<std::uint32_t, std::vector<std::uint64_t>> get_supported_capture_modifiers();
++
+   /**
+    * @brief Initialize Vulkan hardware device for FFmpeg encoding.
+    * @param encode_device The encode device (vk_t).
+diff --git a/src/platform/linux/wayland.cpp b/src/platform/linux/wayland.cpp
+index ee3f2c3edd6..e73bbae0415 100644
+--- a/src/platform/linux/wayland.cpp
++++ b/src/platform/linux/wayland.cpp
+@@ -312,11 +312,13 @@ namespace wl {
+     zwlr_screencopy_manager_v1 *screencopy_manager,
+     zwp_linux_dmabuf_v1 *dmabuf_interface,
+     const std::map<std::uint32_t, std::vector<std::uint64_t>> *supported_modifiers,
++    const std::map<std::uint32_t, std::vector<std::uint64_t>> *encoder_modifiers,
+     wl_output *output,
+     bool blend_cursor
+   ) {
+     this->dmabuf_interface = dmabuf_interface;
+     this->supported_modifiers = supported_modifiers;
++    this->encoder_modifiers = encoder_modifiers;
+     // Reset state
+     shm_info.supported = false;
+     dmabuf_info.supported = false;
+@@ -410,6 +412,41 @@ namespace wl {
+     return static_cast<std::uint32_t>(plane_count);
+   }
+ 
++  /**
++   * @brief Intersect compositor modifiers with encoder modifiers.
++   *
++   * @param compositor_mods Modifiers supported by the compositor.
++   * @param format DRM format code for logging.
++   * @return Modifiers supported by both, or empty if no intersection.
++   */
++  std::vector<std::uint64_t> dmabuf_t::intersect_modifiers(const std::vector<std::uint64_t> &compositor_mods, std::uint32_t format) {
++    std::vector<std::uint64_t> result;
++
++    auto enc_it = encoder_modifiers->find(format);
++    if (enc_it == encoder_modifiers->end() || enc_it->second.empty()) {
++      return result;
++    }
++
++    for (const auto &comp_mod : compositor_mods) {
++      for (const auto &enc_mod : enc_it->second) {
++        if (comp_mod == enc_mod) {
++          result.push_back(comp_mod);
++          break;
++        }
++      }
++    }
++
++    if (!result.empty()) {
++      BOOST_LOG(debug) << "[wayland] Using "sv << result.size()
++                       << " intersected modifiers for format 0x"sv << std::hex << format << std::dec;
++    } else {
++      BOOST_LOG(warning) << "[wayland] No common modifiers between compositor and encoder for format 0x"sv
++                         << std::hex << format << std::dec << ", falling back to compositor modifiers"sv;
++    }
++
++    return result;
++  }
++
+   // DMA-BUF creation helper
+   void dmabuf_t::create_and_copy_dmabuf(zwlr_screencopy_frame_v1 *frame) {
+     if (!init_gbm()) {
+@@ -423,7 +460,18 @@ namespace wl {
+     if (supported_modifiers) {
+       auto it = supported_modifiers->find(dmabuf_info.format);
+       if (it != supported_modifiers->end() && !it->second.empty()) {
+-        current_bo = gbm_bo_create_with_modifiers2(gbm_device, dmabuf_info.width, dmabuf_info.height, dmabuf_info.format, it->second.data(), it->second.size(), GBM_BO_USE_RENDERING);
++        const std::vector<std::uint64_t> *modifiers_to_use = &it->second;
++        std::vector<std::uint64_t> intersected_modifiers;
++
++        // If encoder modifiers are provided, intersect with compositor's modifiers
++        if (encoder_modifiers) {
++          intersected_modifiers = intersect_modifiers(it->second, dmabuf_info.format);
++          if (!intersected_modifiers.empty()) {
++            modifiers_to_use = &intersected_modifiers;
++          }
++        }
++
++        current_bo = gbm_bo_create_with_modifiers2(gbm_device, dmabuf_info.width, dmabuf_info.height, dmabuf_info.format, modifiers_to_use->data(), modifiers_to_use->size(), GBM_BO_USE_RENDERING);
+       }
+     }
+ 
+diff --git a/src/platform/linux/wayland.h b/src/platform/linux/wayland.h
+index 5cd24bf0bc5..3474705cd63 100644
+--- a/src/platform/linux/wayland.h
++++ b/src/platform/linux/wayland.h
+@@ -107,10 +107,11 @@ namespace wl {
+      * @param screencopy_manager Compositor screencopy manager used to request frames.
+      * @param dmabuf_interface Compositor DMA-BUF interface used to allocate buffers.
+      * @param supported_modifiers DMA-BUF format modifiers supported by the compositor.
++     * @param encoder_modifiers DMA-BUF format modifiers supported by the encoder (optional, for intersection).
+      * @param output Wayland output to capture.
+      * @param blend_cursor Whether the compositor should include the cursor in the frame.
+      */
+-    void listen(zwlr_screencopy_manager_v1 *screencopy_manager, zwp_linux_dmabuf_v1 *dmabuf_interface, const std::map<std::uint32_t, std::vector<std::uint64_t>> *supported_modifiers, wl_output *output, bool blend_cursor = false);
++    void listen(zwlr_screencopy_manager_v1 *screencopy_manager, zwp_linux_dmabuf_v1 *dmabuf_interface, const std::map<std::uint32_t, std::vector<std::uint64_t>> *supported_modifiers, const std::map<std::uint32_t, std::vector<std::uint64_t>> *encoder_modifiers, wl_output *output, bool blend_cursor = false);
+     /**
+      * @brief Store the Wayland buffer created for a DMA-BUF parameter request.
+      *
+@@ -202,9 +203,11 @@ namespace wl {
+     bool init_gbm();
+     void cleanup_gbm();
+     void create_and_copy_dmabuf(zwlr_screencopy_frame_v1 *frame);
++    std::vector<std::uint64_t> intersect_modifiers(const std::vector<std::uint64_t> &compositor_mods, std::uint32_t format);
+ 
+     zwp_linux_dmabuf_v1 *dmabuf_interface {nullptr};
+     const std::map<std::uint32_t, std::vector<std::uint64_t>> *supported_modifiers {nullptr};
++    const std::map<std::uint32_t, std::vector<std::uint64_t>> *encoder_modifiers {nullptr};  ///< Modifiers supported by the encoder (for intersection).
+ 
+     struct {
+       bool supported {false};
+diff --git a/src/platform/linux/wlgrab.cpp b/src/platform/linux/wlgrab.cpp
+index 30be46e5fad..a1a5c92309c 100644
+--- a/src/platform/linux/wlgrab.cpp
++++ b/src/platform/linux/wlgrab.cpp
+@@ -3,6 +3,7 @@
+  * @brief Definitions for wlgrab capture.
+  */
+ // standard includes
++#include <map>
+ #include <thread>
+ 
+ // local includes
+@@ -11,6 +12,7 @@
+ #include "src/platform/common.h"
+ #include "src/video.h"
+ #include "vaapi.h"
++#include "vulkan_encode.h"
+ #include "wayland.h"
+ 
+ using namespace std::literals;
+@@ -24,6 +26,10 @@ namespace wl {
+       return true;
+     }
+ 
++    if (hwdevice_type == platf::mem_type_e::vulkan) {
++      return true;
++    }
++
+ #ifdef SUNSHINE_BUILD_CUDA
+     if (hwdevice_type == platf::mem_type_e::cuda) {
+       return true;
+@@ -175,7 +181,8 @@ namespace wl {
+       auto to = std::chrono::steady_clock::now() + timeout;
+ 
+       // Dispatch events until we get a new frame or the timeout expires
+-      dmabuf.listen(interface.screencopy_manager, interface.dmabuf_interface, &interface.supported_modifiers, output, cursor);
++      const std::map<std::uint32_t, std::vector<std::uint64_t>> *enc_mods = encoder_modifiers.empty() ? nullptr : &encoder_modifiers;
++      dmabuf.listen(interface.screencopy_manager, interface.dmabuf_interface, &interface.supported_modifiers, enc_mods, output, cursor);
+       do {
+         auto remaining_time_ms = std::chrono::duration_cast<std::chrono::milliseconds>(to - std::chrono::steady_clock::now());
+         if (remaining_time_ms.count() < 0 || !display.dispatch(remaining_time_ms)) {
+@@ -205,6 +212,8 @@ namespace wl {
+     dmabuf_t dmabuf;  ///< DMA-BUF feedback and format state advertised by the compositor.
+ 
+     wl_output *output;  ///< Wayland output selected for capture.
++
++    std::map<std::uint32_t, std::vector<std::uint64_t>> encoder_modifiers;  ///< DRM format modifiers supported by the encoder.
+   };
+ 
+   /**
+@@ -467,6 +476,12 @@ namespace wl {
+       }
+ #endif
+ 
++#ifdef SUNSHINE_BUILD_VULKAN
++      if (mem_type == platf::mem_type_e::vulkan) {
++        return vk::make_avcodec_encode_device_vram(width, height, 0, 0);
++      }
++#endif
++
+ #ifdef SUNSHINE_BUILD_CUDA
+       if (mem_type == platf::mem_type_e::cuda) {
+         return cuda::make_avcodec_gl_encode_device(width, height, 0, 0);
+@@ -497,13 +512,24 @@ namespace platf {
+    * @brief Create a Wayland capture backend for the requested memory type.
+    */
+   std::shared_ptr<display_t> wl_display(mem_type_e hwdevice_type, const std::string &display_name, const video::config_t &config) {
+-    if (hwdevice_type != platf::mem_type_e::system && hwdevice_type != platf::mem_type_e::vaapi && hwdevice_type != platf::mem_type_e::cuda) {
++    if (hwdevice_type != platf::mem_type_e::system && hwdevice_type != platf::mem_type_e::vaapi && hwdevice_type != platf::mem_type_e::cuda && hwdevice_type != platf::mem_type_e::vulkan) {
+       BOOST_LOG(error) << "[wlgrab] Could not initialize display with the given hw device type."sv;
+       return nullptr;
+     }
+ 
+     if (wl::use_vram_capture(hwdevice_type)) {
+       auto wlr = std::make_shared<wl::wlr_vram_t>();
++
++      // For Vulkan encoder, query supported modifiers before init for safe buffer allocation
++      if (hwdevice_type == platf::mem_type_e::vulkan) {
++        wlr->encoder_modifiers = vk::get_supported_capture_modifiers();
++        if (wlr->encoder_modifiers.empty()) {
++          BOOST_LOG(error) << "[wlgrab] Vulkan encoder reported no supported DRM format modifiers, cannot use wlroots capture"sv;
++          return nullptr;
++        }
++        BOOST_LOG(info) << "[wlgrab] Vulkan encoder supports modifiers for "sv << wlr->encoder_modifiers.size() << " formats"sv;
++      }
++
+       if (wlr->init(hwdevice_type, display_name, config)) {
+         return nullptr;
+       }

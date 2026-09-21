@@ -23,12 +23,11 @@ let
   ]);
   src = pkgs.fetchgit {
     url = "https://github.com/LizardByte/Sunshine.git";
-    rev = "3dfbfe0906cf5970f84b96a1451451eaa2ab1fab";
-    hash = "sha256-tMPjj7mjwiY7P2SO+dIczjJLlf24bASflpUBGfk2plU=";
+    rev = "7e4a74010450f40f68e8b730f706ed83524d2a5e";
+    hash = "sha256-euh3GORJqtU00hUSy6Wzo7xiqbm7MAo8o+qJcOjZVus=";
     fetchSubmodules = true;
   };
-  version = "2026.08.21.vulkan";
-  boostVersion = pkgs.boost.version;
+  version = "2026.09.19.vulkan";
 in
 
 sunshine.overrideAttrs (old: {
@@ -38,14 +37,15 @@ sunshine.overrideAttrs (old: {
   inherit src version;
 
   patches = (old.patches or [ ]) ++ [
-    ./sunshine-pr-5427.patch
+    ./sunshine-pr-5734.patch
+    ./sunshine-pr-5748.patch
   ];
 
   ui = pkgs.buildNpmPackage {
     inherit src version;
 
     pname = "sunshine-ui";
-    npmDepsHash = "sha256-W4MZQQO7BJQNStROjq/iSRAuUcNO9y66C6aFep28Qpk=";
+    npmDepsHash = "sha256-IxFsBZVTY5L+KgQKyXDRNAHxZ+Rw9mJo16XVJaSM4ew=";
     nodejs = pkgs.nodejs_24;
 
     # keep npm dependency hashing tied to this repo's checked-in lockfile
@@ -66,12 +66,6 @@ sunshine.overrideAttrs (old: {
   postPatch = ''
         substituteInPlace cmake/targets/common.cmake \
           --replace-fail 'find_program(NPM npm REQUIRED)' ""
-
-        sed -i -E 's|set\(BOOST_VERSION "[^"]+"\)|set(BOOST_VERSION "${boostVersion}")|' \
-          cmake/dependencies/Boost_Sunshine.cmake
-        grep -Fq 'set(BOOST_VERSION "${boostVersion}")' \
-          cmake/dependencies/Boost_Sunshine.cmake
-        echo 'set(FETCH_CONTENT_BOOST_USED TRUE)' >> cmake/dependencies/Boost_Sunshine.cmake
 
         substituteInPlace cmake/packaging/linux.cmake \
           --replace-fail 'find_package(Systemd)' "" \

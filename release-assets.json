@@ -28,8 +28,8 @@
       }
     },
     "sunshine": {
-      "version": "2026.08.21.vulkan",
-      "revision": "3dfbfe0906cf5970f84b96a1451451eaa2ab1fab",
+      "version": "2026.09.19.vulkan",
+      "revision": "7e4a74010450f40f68e8b730f706ed83524d2a5e",
       "assets": {
         "x86_64-linux": {
           "name": "sunshine-main-x86_64-linux.tar.gz",
@@ -39,8 +39,8 @@
       }
     },
     "sunshine-cuda": {
-      "version": "2026.08.21.vulkan",
-      "revision": "3dfbfe0906cf5970f84b96a1451451eaa2ab1fab",
+      "version": "2026.09.19.vulkan",
+      "revision": "7e4a74010450f40f68e8b730f706ed83524d2a5e",
       "assets": {
         "x86_64-linux": {
           "name": "sunshine-main-cuda-x86_64-linux.tar.gz",
