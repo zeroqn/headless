@@ -102,7 +102,7 @@
         ]
         ++ lib.optionals cudaSupport [ cudaPackages.cuda_cudart ];
 
-      moonlightRevision = "2e13ed9977bc31c73caf8428f08f58d793313ece";
+      moonlightRevision = "8369d1a0e11b999d4d1598f62ca5f6dea49602fb";
       waypipeRevision = "1ac039b4d50e2658d284e750c182266cc00efe74";
       waypipeVersion = "0.11.0-unstable-2026-06-17";
 
@@ -213,7 +213,7 @@
             owner = "moonlight-stream";
             repo = "moonlight-qt";
             rev = moonlightRevision;
-            hash = "sha256-kCm/YoFGcXhF/Abi5lRV5F7H1AbKJchdDOlfBVR0tRA=";
+            hash = "sha256-W1EOcoB3Lc5pdys8g9aB1+AzLnsneMUA8Zr1ynxprsg=";
             fetchSubmodules = true;
           };
           patches = [ ];
