@@ -253,23 +253,35 @@ jobs:
         uses: DeterminateSystems/magic-nix-cache-action@main
 
       - name: Build mimalloc
-        run: nix build .#mimallocReleaseBuild --out-link result-mimalloc --print-build-logs
+        run: |
+          nix build .#mimallocReleaseBuild --out-link result-mimalloc --print-build-logs
+          nix build .#mimalloc-secureReleaseBuild --out-link result-mimalloc-secure --print-build-logs
+          nix build .#mimalloc-secure-fullReleaseBuild --out-link result-mimalloc-secure-full --print-build-logs
 
       - name: Package mimalloc
         run: |
           set -euo pipefail
 
-          archive="mimalloc-3.5.0-x86_64-linux.tar.gz"
-          test -e result-mimalloc/lib/libmimalloc.so
-          test -e result-mimalloc/lib/libmimalloc.so.3
-          tar -czf "$archive" -C "$(readlink -f result-mimalloc)" .
-          sha256sum "$archive" >"$archive.sha256"
+          for variant in mimalloc mimalloc-secure mimalloc-secure-full; do
+            result="result-$variant"
+            archive="$variant-3.5.3-x86_64-linux.tar.gz"
+            test -e "$result/lib/libmimalloc.so"
+            tar -czf "$archive" -C "$(readlink -f "$result")" .
+            sha256sum "$archive" >"$archive.sha256"
+          done
 
-      - name: Attest mimalloc archive
+          test -e result-mimalloc/lib/libmimalloc.so.3
+          test -e result-mimalloc-secure/lib/libmimalloc-secure.so
+          test -e result-mimalloc-secure-full/lib/libmimalloc-secure.so
+
+      - name: Attest mimalloc archives
         id: attest
         uses: actions/attest@v4
         with:
-          subject-path: mimalloc-3.5.0-x86_64-linux.tar.gz
+          subject-path: |
+            mimalloc-3.5.3-x86_64-linux.tar.gz
+            mimalloc-secure-3.5.3-x86_64-linux.tar.gz
+            mimalloc-secure-full-3.5.3-x86_64-linux.tar.gz
 
       - name: Prepare mimalloc attestation asset
         run: |
@@ -281,8 +293,12 @@ jobs:
         with:
           name: publish-mimalloc
           path: |
-            mimalloc-3.5.0-x86_64-linux.tar.gz
-            mimalloc-3.5.0-x86_64-linux.tar.gz.sha256
+            mimalloc-3.5.3-x86_64-linux.tar.gz
+            mimalloc-3.5.3-x86_64-linux.tar.gz.sha256
+            mimalloc-secure-3.5.3-x86_64-linux.tar.gz
+            mimalloc-secure-3.5.3-x86_64-linux.tar.gz.sha256
+            mimalloc-secure-full-3.5.3-x86_64-linux.tar.gz
+            mimalloc-secure-full-3.5.3-x86_64-linux.tar.gz.sha256
             mimalloc-main-build-x86_64-linux.sigstore.json
 
   publish:

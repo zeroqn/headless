@@ -115,7 +115,7 @@
           zstd
         ];
 
-      mimallocVersion = "3.5.0";
+      mimallocVersion = "3.5.3";
 
       mimallocRuntimeDeps = pkgs: [ ];
 
@@ -260,27 +260,37 @@
           };
         });
       mkMimallocBinaryPackage =
-        pkgs: system:
+        pkgs: system: variant:
         pkgs.callPackage ./mimalloc/prebuilt-package.nix {
+          pname = "${variant}-bin";
           runtimeDeps = [ ];
-          releaseAsset = releaseMeta.packages.mimalloc.assets.${system} // {
+          releaseAsset = releaseMeta.packages.${variant}.assets.${system} // {
             inherit system;
             inherit (releaseMeta) owner repo;
             inherit (releaseMeta.release) tag;
-            inherit (releaseMeta.packages.mimalloc) version;
+            inherit (releaseMeta.packages.${variant}) version;
           };
         };
       mkMimallocSourceBuild =
-        pkgs:
-        pkgs.mimalloc.overrideAttrs (finalAttrs: {
+        pkgs: miSecure:
+        let
+          base = pkgs.mimalloc.override { secureBuild = miSecure != "OFF"; };
+        in
+        base.overrideAttrs (finalAttrs: {
           version = mimallocVersion;
           src = pkgs.fetchFromGitHub {
             owner = "microsoft";
             repo = "mimalloc";
             tag = "v${mimallocVersion}";
-            hash = "sha256-1cHcEjcnzyJaEohtMoC3h7EdXSLE1lHCnq8kURXIx/E=";
+            hash = "sha256-GmLMWdUR2/VXJY7A8dZtwoV9FJIx0sxj8KWI4kG8IrU=";
           };
+          # nixpkgs' secureBuild only selects MI_SECURE=ON; rewrite that flag so
+          # MI_SECURE=FULL is reachable for the full-secure variant.
+          cmakeFlags = map (
+            flag: if pkgs.lib.hasPrefix "-DMI_SECURE:" flag then "-DMI_SECURE:BOOL=${miSecure}" else flag
+          ) (base.cmakeFlags or [ ]);
           passthru = (finalAttrs.passthru or { }) // {
+            inherit miSecure;
             sourceRevision = mimallocVersion;
           };
         });
@@ -321,6 +331,10 @@
           hasMoonlightBinary = builtins.hasAttr system releaseMeta.packages.moonlight.assets;
           hasWaypipeBinary = builtins.hasAttr system releaseMeta.packages.waypipe.assets;
           hasMimallocBinary = builtins.hasAttr system releaseMeta.packages.mimalloc.assets;
+          hasMimallocSecureBinary = builtins.hasAttr system releaseMeta.packages."mimalloc-secure".assets;
+          hasMimallocSecureFullBinary =
+            builtins.hasAttr system
+              releaseMeta.packages."mimalloc-secure-full".assets;
           hasMesaBinary = builtins.hasAttr system releaseMeta.packages.mesa.assets;
         in
         {
@@ -340,7 +354,9 @@
           sunshine-headless-release-build-cuda = mkSunshineSourceBuild prev true;
           moonlight-headless-release-build = mkMoonlightSourceBuild prev;
           waypipe-headless-release-build = mkWaypipeSourceBuild prev;
-          mimalloc-headless-release-build = mkMimallocSourceBuild prev;
+          mimalloc-headless-release-build = mkMimallocSourceBuild prev "OFF";
+          mimalloc-secure-headless-release-build = mkMimallocSourceBuild prev "ON";
+          mimalloc-secure-full-headless-release-build = mkMimallocSourceBuild prev "FULL";
           mesa-headless-release-build = mkMesaSourceBuild prev;
         }
         // prev.lib.optionalAttrs hasNiriBinary {
@@ -366,8 +382,16 @@
           waypipe-bin = final.waypipe;
         }
         // prev.lib.optionalAttrs hasMimallocBinary {
-          mimalloc = mkMimallocBinaryPackage prev system;
+          mimalloc = mkMimallocBinaryPackage prev system "mimalloc";
           mimalloc-bin = final.mimalloc;
+        }
+        // prev.lib.optionalAttrs hasMimallocSecureBinary {
+          mimalloc-secure = mkMimallocBinaryPackage prev system "mimalloc-secure";
+          mimalloc-secure-bin = final.mimalloc-secure;
+        }
+        // prev.lib.optionalAttrs hasMimallocSecureFullBinary {
+          mimalloc-secure-full = mkMimallocBinaryPackage prev system "mimalloc-secure-full";
+          mimalloc-secure-full-bin = final.mimalloc-secure-full;
         }
         // prev.lib.optionalAttrs hasMesaBinary {
           mesa =
@@ -436,6 +460,12 @@
           mimalloc = pkgs.mimalloc;
           mimalloc-bin = pkgs.mimalloc-bin;
           mimallocReleaseBuild = pkgs.mimalloc-headless-release-build;
+          mimalloc-secure = pkgs.mimalloc-secure;
+          mimalloc-secure-bin = pkgs.mimalloc-secure-bin;
+          mimalloc-secureReleaseBuild = pkgs.mimalloc-secure-headless-release-build;
+          mimalloc-secure-full = pkgs.mimalloc-secure-full;
+          mimalloc-secure-full-bin = pkgs.mimalloc-secure-full-bin;
+          mimalloc-secure-fullReleaseBuild = pkgs.mimalloc-secure-full-headless-release-build;
 
           mesa = pkgs.mesa;
           mesaReleaseBuild = pkgs.mesa-headless-release-build;
@@ -461,6 +491,8 @@
                 "moonlightReleaseBuild"
                 "waypipeReleaseBuild"
                 "mimallocReleaseBuild"
+                "mimalloc-secureReleaseBuild"
+                "mimalloc-secure-fullReleaseBuild"
                 "mesaReleaseBuild"
               ];
             in
@@ -513,8 +545,15 @@
             pkgs.runCommand "waypipe-package-metadata" { } "touch $out";
           mimalloc-package-metadata =
             assert pkgs.mimalloc == pkgs.mimalloc-bin;
-            assert pkgs.mimalloc.version == "3.5.0";
-            assert pkgs.mimalloc-headless-release-build.passthru.sourceRevision == "3.5.0";
+            assert pkgs.mimalloc-secure == pkgs.mimalloc-secure-bin;
+            assert pkgs.mimalloc-secure-full == pkgs.mimalloc-secure-full-bin;
+            assert pkgs.mimalloc.version == "3.5.3";
+            assert pkgs.mimalloc-secure.version == "3.5.3";
+            assert pkgs.mimalloc-secure-full.version == "3.5.3";
+            assert pkgs.mimalloc-headless-release-build.passthru.sourceRevision == "3.5.3";
+            assert pkgs.mimalloc-headless-release-build.passthru.miSecure == "OFF";
+            assert pkgs.mimalloc-secure-headless-release-build.passthru.miSecure == "ON";
+            assert pkgs.mimalloc-secure-full-headless-release-build.passthru.miSecure == "FULL";
             pkgs.runCommand "mimalloc-package-metadata" { } "touch $out";
           mesa-package-metadata =
             assert pkgs.mesa == pkgs.mesa-headless-bin;

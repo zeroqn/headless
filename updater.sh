@@ -14,8 +14,8 @@ sunshine_version="${SUNSHINE_VERSION:-2026.09.19.vulkan}"
 moonlight_revision="${MOONLIGHT_REVISION:-8369d1a0e11b999d4d1598f62ca5f6dea49602fb}"
 waypipe_revision="${WAYPIPE_REVISION:-6cccb84b74f2e9e5e88a77d004a58c7a87f5b97e}"
 waypipe_version="${WAYPIPE_VERSION:-0.11.2-unstable-2026-09-26}"
-mimalloc_revision="${MIMALLOC_REVISION:-3.5.0}"
-mimalloc_version="${MIMALLOC_VERSION:-3.5.0}"
+mimalloc_revision="${MIMALLOC_REVISION:-3.5.3}"
+mimalloc_version="${MIMALLOC_VERSION:-3.5.3}"
 mesa_revision="${MESA_REVISION:-mesa-26.1.8}"
 mesa_version="${MESA_VERSION:-26.1.8}"
 
@@ -230,6 +230,8 @@ fi
 
 if has_group mimalloc; then
   collect_assets mimalloc "mimalloc-${mimalloc_version}-"
+  collect_assets mimalloc-secure "mimalloc-secure-${mimalloc_version}-"
+  collect_assets mimalloc-secure-full "mimalloc-secure-full-${mimalloc_version}-"
 
   jq \
     --arg owner "$owner" \
@@ -237,7 +239,9 @@ if has_group mimalloc; then
     --arg tag "$release_tag" \
     --arg version "$mimalloc_version" \
     --arg revision "$mimalloc_revision" \
-    --slurpfile mimalloc_assets "$workdir/mimalloc-assets.json" '
+    --slurpfile mimalloc_assets "$workdir/mimalloc-assets.json" \
+    --slurpfile mimalloc_secure_assets "$workdir/mimalloc-secure-assets.json" \
+    --slurpfile mimalloc_secure_full_assets "$workdir/mimalloc-secure-full-assets.json" '
       .owner = $owner
       | .repo = $repo
       | .release.tag = $tag
@@ -245,6 +249,16 @@ if has_group mimalloc; then
           version: $version,
           revision: $revision,
           assets: ($mimalloc_assets[0] | from_entries)
+        }
+      | .packages["mimalloc-secure"] = {
+          version: $version,
+          revision: $revision,
+          assets: ($mimalloc_secure_assets[0] | from_entries)
+        }
+      | .packages["mimalloc-secure-full"] = {
+          version: $version,
+          revision: $revision,
+          assets: ($mimalloc_secure_full_assets[0] | from_entries)
         }
     ' "$workdir/manifest.json" >"$workdir/manifest.next.json"
   mv "$workdir/manifest.next.json" "$workdir/manifest.json"

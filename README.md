@@ -7,7 +7,7 @@ This repository builds and publishes prebuilt Nix package outputs for:
 - Standard and CUDA-enabled Sunshine from the pinned source in `sunshine/source-package.nix`.
 - Moonlight Qt commit [`8369d1a`](https://github.com/moonlight-stream/moonlight-qt/commit/8369d1a0e11b999d4d1598f62ca5f6dea49602fb).
 - Waypipe commit [`6cccb84b`](https://gitlab.freedesktop.org/mstoeckl/waypipe/-/commit/6cccb84b74f2e9e5e88a77d004a58c7a87f5b97e) with a 128M vsock socket buffer patch (`patches/waypipe-vsock-buffer-128m.patch`).
-- mimalloc `3.5.0` ([microsoft/mimalloc](https://github.com/microsoft/mimalloc/releases/tag/v3.5.0)), newer than the `3.3.2` shipped by nixpkgs.
+- mimalloc `3.5.3` ([microsoft/mimalloc](https://github.com/microsoft/mimalloc/releases/tag/v3.5.3)) in three `MI_SECURE` builds — `OFF` (`mimalloc`), `ON` (`mimalloc-secure`) and `FULL` (`mimalloc-secure-full`) — newer than the `3.3.2` shipped by nixpkgs.
 - Patched Mesa `26.1.5` from the pinned nixpkgs with `patches/mesa-headless-virtio-modifiers.patch` appended (AMD virtio-gpu DMA-BUF modifier fix for radeonsi).
 
 Downstream NixOS systems install the release packages without compiling them locally.
@@ -34,6 +34,12 @@ Downstream NixOS systems install the release packages without compiling them loc
 - `packages.x86_64-linux.mimalloc`
 - `packages.x86_64-linux.mimalloc-bin`
 - `packages.x86_64-linux.mimallocReleaseBuild`
+- `packages.x86_64-linux.mimalloc-secure`
+- `packages.x86_64-linux.mimalloc-secure-bin`
+- `packages.x86_64-linux.mimalloc-secureReleaseBuild`
+- `packages.x86_64-linux.mimalloc-secure-full`
+- `packages.x86_64-linux.mimalloc-secure-full-bin`
+- `packages.x86_64-linux.mimalloc-secure-fullReleaseBuild`
 - `packages.x86_64-linux.mesa`
 - `packages.x86_64-linux.mesa-headless-bin`
 - `packages.x86_64-linux.mesaReleaseBuild`
@@ -80,7 +86,7 @@ Import the provided module when NixOS configuration or another module should use
 }
 ```
 
-The overlay does not replace nixpkgs `pkgs.rio`; Rio is exposed as `pkgs.rio-headless-bin`. The overlay replaces nixpkgs `pkgs.waypipe` with the prebuilt package and also exposes the same package as `pkgs.waypipe-bin`. The overlay replaces nixpkgs `pkgs.mimalloc` with the prebuilt package and exposes the same package as `pkgs.mimalloc-bin`, so a downstream allocator override such as `nixpkgs.config.packageOverrides` or an `LD_PRELOAD=libmimalloc.so` wrapper resolves to mimalloc 3.5.0 instead of the 3.3.2 in nixpkgs. The overlay replaces nixpkgs `pkgs.mesa` with the patched prebuilt package and exposes the same package as `pkgs.mesa-headless-bin`, so `hardware.graphics.package` (which defaults to `pkgs.mesa`) resolves to the patched Mesa on AMD virtio-gpu native-context guests. Packages that build against `pkgs.mesa`'s non-`out` outputs should use `pkgs.mesa-headless-release-build` instead.
+The overlay does not replace nixpkgs `pkgs.rio`; Rio is exposed as `pkgs.rio-headless-bin`. The overlay replaces nixpkgs `pkgs.waypipe` with the prebuilt package and also exposes the same package as `pkgs.waypipe-bin`. The overlay replaces nixpkgs `pkgs.mimalloc` with the prebuilt `MI_SECURE=OFF` package and exposes the same package as `pkgs.mimalloc-bin`, so a downstream allocator override such as `nixpkgs.config.packageOverrides` or an `LD_PRELOAD=libmimalloc.so` wrapper resolves to mimalloc 3.5.3 instead of the 3.3.2 in nixpkgs. The `MI_SECURE=ON` and `MI_SECURE=FULL` builds are exposed as `pkgs.mimalloc-secure`/`pkgs.mimalloc-secure-bin` and `pkgs.mimalloc-secure-full`/`pkgs.mimalloc-secure-full-bin`; both install `libmimalloc-secure.so` and add a `libmimalloc.so` symlink to it. The overlay replaces nixpkgs `pkgs.mesa` with the patched prebuilt package and exposes the same package as `pkgs.mesa-headless-bin`, so `hardware.graphics.package` (which defaults to `pkgs.mesa`) resolves to the patched Mesa on AMD virtio-gpu native-context guests. Packages that build against `pkgs.mesa`'s non-`out` outputs should use `pkgs.mesa-headless-release-build` instead.
 
 For a CUDA-enabled Sunshine service, allow unfree packages in the downstream Nixpkgs configuration and select the CUDA package explicitly:
 
@@ -178,7 +184,7 @@ The standalone Moonlight Qt repository is not modified by this repository change
 2. Builds standard and CUDA Sunshine in a separate package group.
 3. Builds Moonlight Qt in an independent package group.
 4. Builds Waypipe in an independent package group.
-5. Builds mimalloc in an independent package group.
+5. Builds the `OFF`, `ON`, and `FULL` `MI_SECURE` mimalloc variants in one independent package group.
 6. Builds patched Mesa in an independent package group.
 7. Packages, checksums, and attests each successful group.
 8. Serializes release publication without deleting the rolling `main-build` release.

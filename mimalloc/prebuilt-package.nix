@@ -5,10 +5,11 @@
   autoPatchelfHook,
   releaseAsset,
   runtimeDeps,
+  pname ? "mimalloc-bin",
 }:
 
 stdenvNoCC.mkDerivation {
-  pname = "mimalloc-bin";
+  inherit pname;
   inherit (releaseAsset) version;
 
   src = fetchurl {
