@@ -1,0 +1,65 @@
+--- a/src/main.rs
++++ b/src/main.rs
+@@ -425,6 +425,44 @@
+     )
+ }
+ 
++/** Raise the vsock send/receive socket buffer limits to 128M.
++ *
++ * The vsock transport is treated as reliable, but its kernel buffers can
++ * overflow under load, silently dropping packets and crashing the session.
++ * Raising SO_VM_SOCKETS_BUFFER_MAX_SIZE and SO_VM_SOCKETS_BUFFER_SIZE gives
++ * queued packets room to drain.
++ * See https://gitlab.freedesktop.org/mstoeckl/waypipe/-/work_items/165
++ */
++#[cfg(target_os = "linux")]
++fn vsock_raise_buffer_size(fd: RawFd) -> Result<(), String> {
++    /* SO_VM_SOCKETS_BUFFER_MAX_SIZE and SO_VM_SOCKETS_BUFFER_SIZE; the libc
++     * crate does not expose the sol_vsock option names. */
++    const SO_VM_SOCKETS_BUFFER_SIZE: libc::c_int = 0;
++    const SO_VM_SOCKETS_BUFFER_MAX_SIZE: libc::c_int = 2;
++    const VSOCK_BUFFER_SIZE: u64 = 128 * 1024 * 1024;
++    for optname in [SO_VM_SOCKETS_BUFFER_MAX_SIZE, SO_VM_SOCKETS_BUFFER_SIZE] {
++        // SAFETY: `VSOCK_BUFFER_SIZE` is a valid `u64` of the length passed
++        // to setsockopt(), and `fd` is an open vsock socket.
++        let r = unsafe {
++            libc::setsockopt(
++                fd,
++                libc::AF_VSOCK,
++                optname,
++                &VSOCK_BUFFER_SIZE as *const u64 as *const libc::c_void,
++                std::mem::size_of::<u64>() as libc::socklen_t,
++            )
++        };
++        if r != 0 {
++            return Err(tag!(
++                "Failed to set vsock buffer size (option {}): {}",
++                optname,
++                Errno::last()
++            ));
++        }
++    }
++    Ok(())
++}
++
+ /** Connect to a socket (and possibly unlink its path); the socket fd returned is
+  * cloexec. the socket file status flags may or may not include O_NONBLOCK and
+  * should be set by the caller. */
+@@ -491,6 +529,8 @@
+             )
+             .map_err(|x| tag!("Failed to create socket: {}", x))?;
+ 
++            vsock_raise_buffer_size(socket.as_raw_fd())?;
++
+             unsafe {
+                 /* nix does not yet support svm_flags, so directly use libc */
+                 const VMADDR_FLAG_TO_HOST: u8 = 0x1;
+@@ -618,6 +658,8 @@
+             )
+             .map_err(|x| tag!("Failed to create socket: {}", x))?;
+ 
++            vsock_raise_buffer_size(socket.as_raw_fd())?;
++
+             let addr = socket::VsockAddr::new(libc::VMADDR_CID_ANY, spec.port);
+             socket::bind(socket.as_raw_fd(), &addr)
+                 .map_err(|x| tag!("Failed to bind socket at {}: {}", spec.to_string(), x))?;

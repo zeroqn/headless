@@ -212,7 +212,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          archive="waypipe-1ac039b4-x86_64-linux.tar.gz"
+          archive="waypipe-6cccb84b-x86_64-linux.tar.gz"
           test -x result-waypipe/bin/waypipe
           test -f result-waypipe/share/man/man1/waypipe.1
           result-waypipe/bin/waypipe --version
@@ -223,7 +223,7 @@ jobs:
         id: attest
         uses: actions/attest@v4
         with:
-          subject-path: waypipe-1ac039b4-x86_64-linux.tar.gz
+          subject-path: waypipe-6cccb84b-x86_64-linux.tar.gz
 
       - name: Prepare Waypipe attestation asset
         run: |
@@ -235,8 +235,8 @@ jobs:
         with:
           name: publish-waypipe
           path: |
-            waypipe-1ac039b4-x86_64-linux.tar.gz
-            waypipe-1ac039b4-x86_64-linux.tar.gz.sha256
+            waypipe-6cccb84b-x86_64-linux.tar.gz
+            waypipe-6cccb84b-x86_64-linux.tar.gz.sha256
             waypipe-main-build-x86_64-linux.sigstore.json
 
   build-mimalloc:

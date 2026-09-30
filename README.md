@@ -6,7 +6,7 @@ This repository builds and publishes prebuilt Nix package outputs for:
 - Rio commit [`d656326`](https://github.com/raphamorim/rio/commit/d656326020ffe5959e221af7a7d1d8d82a6ab2db).
 - Standard and CUDA-enabled Sunshine from the pinned source in `sunshine/source-package.nix`.
 - Moonlight Qt commit [`8369d1a`](https://github.com/moonlight-stream/moonlight-qt/commit/8369d1a0e11b999d4d1598f62ca5f6dea49602fb).
-- Waypipe commit [`1ac039b4`](https://gitlab.freedesktop.org/mstoeckl/waypipe/-/commit/1ac039b4d50e2658d284e750c182266cc00efe74).
+- Waypipe commit [`6cccb84b`](https://gitlab.freedesktop.org/mstoeckl/waypipe/-/commit/6cccb84b74f2e9e5e88a77d004a58c7a87f5b97e) with a 128M vsock socket buffer patch (`patches/waypipe-vsock-buffer-128m.patch`).
 - mimalloc `3.5.0` ([microsoft/mimalloc](https://github.com/microsoft/mimalloc/releases/tag/v3.5.0)), newer than the `3.3.2` shipped by nixpkgs.
 - Patched Mesa `26.1.5` from the pinned nixpkgs with `patches/mesa-headless-virtio-modifiers.patch` appended (AMD virtio-gpu DMA-BUF modifier fix for radeonsi).
 

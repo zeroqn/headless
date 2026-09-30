@@ -103,8 +103,8 @@
         ++ lib.optionals cudaSupport [ cudaPackages.cuda_cudart ];
 
       moonlightRevision = "8369d1a0e11b999d4d1598f62ca5f6dea49602fb";
-      waypipeRevision = "1ac039b4d50e2658d284e750c182266cc00efe74";
-      waypipeVersion = "0.11.0-unstable-2026-06-17";
+      waypipeRevision = "6cccb84b74f2e9e5e88a77d004a58c7a87f5b97e";
+      waypipeVersion = "0.11.2-unstable-2026-09-26";
 
       waypipeRuntimeDeps =
         pkgs: with pkgs; [
@@ -233,19 +233,27 @@
 
       mkWaypipeSourceBuild =
         pkgs:
-        pkgs.waypipe.overrideAttrs (finalAttrs: {
-          version = waypipeVersion;
-          src = pkgs.fetchFromGitLab {
+        let
+          waypipeSrc = pkgs.fetchFromGitLab {
             domain = "gitlab.freedesktop.org";
             owner = "mstoeckl";
             repo = "waypipe";
             rev = waypipeRevision;
-            hash = "sha256-rSTphq/ZJItyp3DTcZyHxD8LvdA0FKCCaA0lw0TXQeA=";
+            hash = "sha256-hshhwhPgHqcHtU3DNvFjEwnaR9skCoMuGaxJf+yniYs=";
           };
+        in
+        pkgs.waypipe.overrideAttrs (finalAttrs: {
+          version = waypipeVersion;
+          src = waypipeSrc;
           cargoDeps = pkgs.rustPlatform.fetchCargoVendor {
-            inherit (finalAttrs) pname version src;
-            hash = "sha256-IUvXHLxrhc2Au57wsE53Q+NL1cZzFcaRG3HDV8s3xWw=";
+            pname = "waypipe";
+            version = waypipeVersion;
+            src = waypipeSrc;
+            hash = "sha256-38C9H1NL14xuacvjlUR45EYomdUznKC5BXg1Y5RkSH4=";
           };
+          patches = (finalAttrs.patches or [ ]) ++ [
+            ./patches/waypipe-vsock-buffer-128m.patch
+          ];
           dontGzipMan = true;
           passthru = (finalAttrs.passthru or { }) // {
             sourceRevision = waypipeRevision;
@@ -501,7 +509,7 @@
             assert pkgs.waypipe-headless-release-build.dontGzipMan;
             assert
               pkgs.waypipe-headless-release-build.passthru.sourceRevision
-              == "1ac039b4d50e2658d284e750c182266cc00efe74";
+              == "6cccb84b74f2e9e5e88a77d004a58c7a87f5b97e";
             pkgs.runCommand "waypipe-package-metadata" { } "touch $out";
           mimalloc-package-metadata =
             assert pkgs.mimalloc == pkgs.mimalloc-bin;

@@ -61,13 +61,13 @@
       }
     },
     "waypipe": {
-      "version": "0.11.0-unstable-2026-06-17",
-      "revision": "1ac039b4d50e2658d284e750c182266cc00efe74",
+      "version": "0.11.2-unstable-2026-09-26",
+      "revision": "6cccb84b74f2e9e5e88a77d004a58c7a87f5b97e",
       "assets": {
         "x86_64-linux": {
-          "name": "waypipe-1ac039b4-x86_64-linux.tar.gz",
-          "url": "https://github.com/zeroqn/headless/releases/download/main-build/waypipe-1ac039b4-x86_64-linux.tar.gz",
-          "hash": "sha256-0lKOCGq8KVLedKaDpVL7luvn9Tz6C4NKI8F4o5QmOjA="
+          "name": "waypipe-6cccb84b-x86_64-linux.tar.gz",
+          "url": "https://github.com/zeroqn/headless/releases/download/main-build/waypipe-6cccb84b-x86_64-linux.tar.gz",
+          "hash": "sha256-ce7mMslN7YQpGH3MUtplil1lFWGYHKckiOAt4CMG3o4="
         }
       }
     },
