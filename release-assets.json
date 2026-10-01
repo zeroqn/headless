@@ -12,7 +12,7 @@
         "x86_64-linux": {
           "name": "niri-headless-main-x86_64-linux.tar.gz",
           "url": "https://github.com/zeroqn/headless/releases/download/main-build/niri-headless-main-x86_64-linux.tar.gz",
-          "hash": "sha256-eHsgr3MxB1ZS1duh24AvtbiL+gWsMq293RJU9aJ4nJ4="
+          "hash": "sha256-vLL+0QfhSwuOrI1fUwNjlwtuD++EJqzzfFigMcHKnb0="
         }
       }
     },
@@ -23,7 +23,7 @@
         "x86_64-linux": {
           "name": "rio-d656326-x86_64-linux.tar.gz",
           "url": "https://github.com/zeroqn/headless/releases/download/main-build/rio-d656326-x86_64-linux.tar.gz",
-          "hash": "sha256-EAtFV/fX13wQo5/UA2KDdOhFDJ0izuof/QkX6ncyN78="
+          "hash": "sha256-86LA9VNmIASwwEeK5OPdezoD2U2r1HLfHM0K3xqV2rc="
         }
       }
     },
@@ -34,7 +34,7 @@
         "x86_64-linux": {
           "name": "sunshine-main-x86_64-linux.tar.gz",
           "url": "https://github.com/zeroqn/headless/releases/download/main-build/sunshine-main-x86_64-linux.tar.gz",
-          "hash": "sha256-BvyDZ2TeuFhOcZO3wF+JwyrsU101af+k0GSXx2zarOE="
+          "hash": "sha256-euIk1km1DO7hWw8AzVI14XRVfHSZbcQpllB5gXo66wU="
         }
       }
     },
@@ -45,7 +45,7 @@
         "x86_64-linux": {
           "name": "sunshine-main-cuda-x86_64-linux.tar.gz",
           "url": "https://github.com/zeroqn/headless/releases/download/main-build/sunshine-main-cuda-x86_64-linux.tar.gz",
-          "hash": "sha256-QH5sDLJjiUqu+YTHGOneF0vhKAlt5EcfuCX4YgohqT0="
+          "hash": "sha256-vsCfv8LLdSV2m7z7Xak+iK8jHGprLgeOxvIxRJ5h6+c="
         }
       }
     },
@@ -56,7 +56,7 @@
         "x86_64-linux": {
           "name": "moonlight-qt-main-x86_64-linux.tar.gz",
           "url": "https://github.com/zeroqn/headless/releases/download/main-build/moonlight-qt-main-x86_64-linux.tar.gz",
-          "hash": "sha256-Ow1AtRtIwJauVOg2k9X8VNIVu++KIfIcZQUlZkU+8xU="
+          "hash": "sha256-5nzt9lIDmGu7sapwHOJ8p0+ceye9zdtBGBzg66DlM30="
         }
       }
     },
@@ -67,7 +67,7 @@
         "x86_64-linux": {
           "name": "waypipe-6cccb84b-x86_64-linux.tar.gz",
           "url": "https://github.com/zeroqn/headless/releases/download/main-build/waypipe-6cccb84b-x86_64-linux.tar.gz",
-          "hash": "sha256-ce7mMslN7YQpGH3MUtplil1lFWGYHKckiOAt4CMG3o4="
+          "hash": "sha256-Kea6UcUGiVgFszJeHWMluECRHFeB/sqnXfuiDxvtomw="
         }
       }
     },
@@ -78,7 +78,7 @@
         "x86_64-linux": {
           "name": "mimalloc-3.5.3-x86_64-linux.tar.gz",
           "url": "https://github.com/zeroqn/headless/releases/download/main-build/mimalloc-3.5.3-x86_64-linux.tar.gz",
-          "hash": "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+          "hash": "sha256-0JPzQ6dNreW9M1MKt62Rpaoh0igHHobOA5WIt5gB50o="
         }
       }
     },
@@ -89,7 +89,7 @@
         "x86_64-linux": {
           "name": "mimalloc-secure-3.5.3-x86_64-linux.tar.gz",
           "url": "https://github.com/zeroqn/headless/releases/download/main-build/mimalloc-secure-3.5.3-x86_64-linux.tar.gz",
-          "hash": "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+          "hash": "sha256-YAT1SJG4iOhIYi9CIr6J2rCsXy4Jz3Xq5YogDReXn5o="
         }
       }
     },
@@ -100,7 +100,7 @@
         "x86_64-linux": {
           "name": "mimalloc-secure-full-3.5.3-x86_64-linux.tar.gz",
           "url": "https://github.com/zeroqn/headless/releases/download/main-build/mimalloc-secure-full-3.5.3-x86_64-linux.tar.gz",
-          "hash": "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+          "hash": "sha256-odv8yUJlTdf7ZVe4Dxmr7SthRUdVDSTVobL1F/l9m4U="
         }
       }
     },
