@@ -23,11 +23,11 @@ let
   ]);
   src = pkgs.fetchgit {
     url = "https://github.com/LizardByte/Sunshine.git";
-    rev = "7e4a74010450f40f68e8b730f706ed83524d2a5e";
-    hash = "sha256-euh3GORJqtU00hUSy6Wzo7xiqbm7MAo8o+qJcOjZVus=";
+    rev = "3411311acf9a9e6f64314be55b9e802dab7aa6ac";
+    hash = "sha256-QxFTXyhaUAQlPI66qZSnPkkbQ25ILpUfFnPF8NI7Vt4=";
     fetchSubmodules = true;
   };
-  version = "2026.09.19.vulkan";
+  version = "2026.10.10.vulkan";
 in
 
 sunshine.overrideAttrs (old: {
@@ -37,15 +37,15 @@ sunshine.overrideAttrs (old: {
   inherit src version;
 
   patches = (old.patches or [ ]) ++ [
-    ./sunshine-pr-5734.patch
-    ./sunshine-pr-5748.patch
+    ./sunshine-mic-common.patch
+    ./sunshine-mic.patch
   ];
 
   ui = pkgs.buildNpmPackage {
     inherit src version;
 
     pname = "sunshine-ui";
-    npmDepsHash = "sha256-IxFsBZVTY5L+KgQKyXDRNAHxZ+Rw9mJo16XVJaSM4ew=";
+    npmDepsHash = "sha256-SzoPokf2plqyVMPKz3xCUm7MIgtBrwE8xHlTjTGNONk=";
     nodejs = pkgs.nodejs_24;
 
     # keep npm dependency hashing tied to this repo's checked-in lockfile
@@ -81,28 +81,6 @@ sunshine.overrideAttrs (old: {
         substituteInPlace packaging/linux/app-dev.lizardbyte.app.Sunshine.service.in \
           --replace-fail '/bin/sleep' '${pkgs.lib.getExe' coreutilsForService "sleep"}'
 
-        python <<'PY'
-    from pathlib import Path
-
-    path = Path('src/nvenc/nvenc_base.cpp')
-    text = path.read_text()
-    text = text.replace(
-        '#if NVENCAPI_VERSION != MAKE_NVENC_VER(13U, 0U)\n  #error Check and update NVENC code for backwards compatibility!\n#endif',
-        '#if NVENCAPI_VERSION < MAKE_NVENC_VER(12U, 0U) || NVENCAPI_VERSION > MAKE_NVENC_VER(13U, 0U)\n  #error Check and update NVENC code for backwards compatibility!\n#endif'
-    )
-    hevc_10bit = '          if (buffer_is_10bit()) {\n            format_config.inputBitDepth = NV_ENC_BIT_DEPTH_10;\n            format_config.outputBitDepth = NV_ENC_BIT_DEPTH_10;\n          }'
-    text = text.replace(
-        hevc_10bit,
-        '          if (buffer_is_10bit()) {\n#if NVENCAPI_MAJOR_VERSION >= 13\n            format_config.inputBitDepth = NV_ENC_BIT_DEPTH_10;\n            format_config.outputBitDepth = NV_ENC_BIT_DEPTH_10;\n#else\n            format_config.pixelBitDepthMinus8 = 2;\n#endif\n          }',
-        1
-    )
-    text = text.replace(
-        hevc_10bit,
-        '          if (buffer_is_10bit()) {\n#if NVENCAPI_MAJOR_VERSION >= 13\n            format_config.inputBitDepth = NV_ENC_BIT_DEPTH_10;\n            format_config.outputBitDepth = NV_ENC_BIT_DEPTH_10;\n#else\n            format_config.inputPixelBitDepthMinus8 = 2;\n            format_config.pixelBitDepthMinus8 = 2;\n#endif\n          }',
-        1
-    )
-    path.write_text(text)
-    PY
   '';
 
   nativeBuildInputs = [

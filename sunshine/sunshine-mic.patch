@@ -1,0 +1,2603 @@
+diff --git a/cmake/compile_definitions/common.cmake b/cmake/compile_definitions/common.cmake
+index f3b9390b..c2c9e310 100644
+--- a/cmake/compile_definitions/common.cmake
++++ b/cmake/compile_definitions/common.cmake
+@@ -177,6 +177,8 @@ set(SUNSHINE_TARGET_FILES
+         "${CMAKE_SOURCE_DIR}/src/input.h"
+         "${CMAKE_SOURCE_DIR}/src/audio.cpp"
+         "${CMAKE_SOURCE_DIR}/src/audio.h"
++        "${CMAKE_SOURCE_DIR}/src/mic_mixer.cpp"
++        "${CMAKE_SOURCE_DIR}/src/mic_mixer.h"
+         "${CMAKE_SOURCE_DIR}/src/platform/common.h"
+         "${CMAKE_SOURCE_DIR}/src/platform/permissions.cpp"
+         "${CMAKE_SOURCE_DIR}/src/platform/permissions.h"
+diff --git a/cmake/compile_definitions/linux.cmake b/cmake/compile_definitions/linux.cmake
+index 485e419a..98d13fe3 100644
+--- a/cmake/compile_definitions/linux.cmake
++++ b/cmake/compile_definitions/linux.cmake
+@@ -264,6 +264,21 @@ if(PIPEWIRE_FOUND)
+             "${CMAKE_SOURCE_DIR}/src/platform/linux/pipewire.cpp")
+ endif()
+ 
++# Virtual microphone output
++#
++# Client microphone audio is played back into a PipeWire virtual source. This is a separate
++# dependency from the PipeWire capture backends above: a host can capture with X11, KMS or
++# wlroots and still expose a virtual microphone, so probe PipeWire independently.
++pkg_check_modules(PIPEWIRE_MIC libpipewire-0.3)
++if(PIPEWIRE_MIC_FOUND)
++    include_directories(SYSTEM ${PIPEWIRE_MIC_INCLUDE_DIRS})
++    list(APPEND PLATFORM_LIBRARIES ${PIPEWIRE_MIC_LIBRARIES})
++    add_compile_definitions(SUNSHINE_BUILD_MIC_REDIRECT)
++    list(APPEND PLATFORM_TARGET_FILES
++            "${CMAKE_SOURCE_DIR}/src/platform/linux/mic_redirect.cpp"
++            "${CMAKE_SOURCE_DIR}/src/platform/linux/mic_redirect.h")
++endif()
++
+ # XDG portal
+ set(PORTAL_FOUND OFF)
+ if(PIPEWIRE_FOUND AND GIO_FOUND AND ${SUNSHINE_ENABLE_PORTAL})
+diff --git a/docs/configuration.md b/docs/configuration.md
+index e04b05ba..0aa832ea 100644
+--- a/docs/configuration.md
++++ b/docs/configuration.md
+@@ -913,6 +913,37 @@ consent prompt for directory ACLs, so the Web UI shows setup steps for correctin
+     </tr>
+ </table>
+ 
++### stream_mic
++
++<table>
++    <tr>
++        <td>Description</td>
++        <td colspan="2">
++            Whether to accept microphone audio from clients that support it. The host mixes every
++            connected client's microphone into a single virtual microphone that host applications
++            record from, so a voice-chat application running under the stream sees the client's
++            microphone as a normal input device.
++            @note{On FreeBSD/Linux the virtual microphone is a PipeWire node named
++            @code{}sunshine-mic@endcode{}. It is created on demand when the first client completes
++            microphone setup, and requires a running PipeWire daemon. Applications select it as
++            @code{}sunshine-mic.monitor@endcode{} in the device list, or as the monitor device of
++            @code{}Sunshine Microphone@endcode{}.}
++        </td>
++    </tr>
++    <tr>
++        <td>Default</td>
++        <td colspan="2">@code{}
++            enabled
++            @endcode</td>
++    </tr>
++    <tr>
++        <td>Example</td>
++        <td colspan="2">@code{}
++            stream_mic = disabled
++            @endcode</td>
++    </tr>
++</table>
++
+ ### install_steam_audio_drivers
+ 
+ <table>
+diff --git a/src/audio.cpp b/src/audio.cpp
+index 28a3d810..70fc6b04 100644
+--- a/src/audio.cpp
++++ b/src/audio.cpp
+@@ -278,6 +278,39 @@ namespace audio {
+     return control_shared.ref();
+   }
+ 
++  int init_mic_redirect_device() {
++    auto ref = get_audio_ctx_ref();
++    if (!ref.get()) {
++      return -1;
++    }
++    if (!ref->control) {
++      BOOST_LOG(warning) << "Audio context not available for microphone device creation"sv;
++      return -1;
++    }
++
++    return ref->control->init_mic_redirect_device();
++  }
++
++  void release_mic_redirect_device() {
++    auto ref = get_audio_ctx_ref();
++    if (!ref.get() || !ref->control) {
++      return;
++    }
++
++    ref->control->release_mic_redirect_device();
++  }
++
++  int write_mic_pcm(const std::int16_t *samples, std::size_t frame_count) {
++    // The microphone receive thread holds its own audio context reference for the
++    // lifetime of the device, so the controller cannot be torn down mid-write.
++    auto ref = get_audio_ctx_ref();
++    if (!ref.get() || !ref->control) {
++      return -1;
++    }
++
++    return ref->control->write_mic_pcm(samples, frame_count);
++  }
++
+   bool is_audio_ctx_sink_available(const audio_ctx_t &ctx) {
+     if (!ctx.control) {
+       return false;
+diff --git a/src/audio.h b/src/audio.h
+index e0e919a5..bcfb1d19 100644
+--- a/src/audio.h
++++ b/src/audio.h
+@@ -136,4 +136,30 @@ namespace audio {
+    * @param ctx Native context object used by the operation or callback.
+    */
+   bool is_audio_ctx_sink_available(const audio_ctx_t &ctx);
++
++  /**
++   * @brief Create the virtual microphone that receives client microphone audio.
++   * @note Must be called serially by the microphone receive thread with the other
++   *       microphone redirect device APIs.
++   * @return 0 on success, -1 when no virtual microphone could be created.
++   */
++  int init_mic_redirect_device();
++
++  /**
++   * @brief Destroy the virtual microphone created by init_mic_redirect_device().
++   * @note Must be called serially by the microphone receive thread with the other
++   *       microphone redirect device APIs.
++   */
++  void release_mic_redirect_device();
++
++  /**
++   * @brief Write mixed mono 48 kHz signed 16-bit PCM to the virtual microphone.
++   * @note Must be called serially by the microphone receive thread with the other
++   *       microphone redirect device APIs.
++   * @param samples Pointer to the mono samples.
++   * @param frame_count Number of mono frames to write.
++   * @return Bytes written, 0 when the frame was dropped for backpressure, -1 on a
++   *         generic error, or -2 when the active output backend became unavailable.
++   */
++  int write_mic_pcm(const std::int16_t *samples, std::size_t frame_count);
+ }  // namespace audio
+diff --git a/src/config.cpp b/src/config.cpp
+index 58067040..36644cd6 100644
+--- a/src/config.cpp
++++ b/src/config.cpp
+@@ -809,6 +809,7 @@ namespace config {
+     true,  // stream audio
+     true,  // install_steam_drivers
+     false,  // external_audio
++    true,  // stream_mic
+   };
+ 
+   /**
+@@ -1755,6 +1756,7 @@ namespace config {
+     bool_f(vars, "stream_audio", audio.stream);
+     bool_f(vars, "install_steam_audio_drivers", audio.install_steam_drivers);
+     bool_f(vars, "external_audio", audio.external_audio);
++    bool_f(vars, "stream_mic", audio.stream_mic);
+ 
+     string_restricted_f(vars, "origin_web_ui_allowed", nvhttp.origin_web_ui_allowed, {"pc"sv, "lan"sv, "wan"sv});
+ 
+diff --git a/src/config.h b/src/config.h
+index 976b97d1..8df80048 100644
+--- a/src/config.h
++++ b/src/config.h
+@@ -233,6 +233,7 @@ namespace config {
+     bool stream;  ///< Enable audio streaming to clients
+     bool install_steam_drivers;  ///< Install Steam audio drivers for enhanced compatibility
+     bool external_audio;  ///< Windows capture-only mode; an external router owns endpoint defaults and formats.
++    bool stream_mic;  ///< Accept microphone audio from compatible Moonlight clients
+   };
+ 
+   /**
+diff --git a/src/crypto.cpp b/src/crypto.cpp
+index 5e39122d..2432a02f 100644
+--- a/src/crypto.cpp
++++ b/src/crypto.cpp
+@@ -146,6 +146,21 @@ namespace crypto {
+       return 0;
+     }
+ 
++    /**
++     * @brief Initialize an AES-CBC decryption context.
++     */
++    static int init_decrypt_cbc(cipher_ctx_t &ctx, aes_t *key, aes_t *iv, bool padding) {
++      ctx.reset(EVP_CIPHER_CTX_new());
++
++      if (EVP_DecryptInit_ex(ctx.get(), EVP_aes_128_cbc(), nullptr, key->data(), iv->data()) != 1) {
++        return -1;
++      }
++
++      EVP_CIPHER_CTX_set_padding(ctx.get(), padding);
++
++      return 0;
++    }
++
+     int gcm_t::decrypt(const std::string_view &tagged_cipher, std::vector<std::uint8_t> &plaintext, aes_t *iv) {
+       if (!decrypt_ctx && init_decrypt_gcm(decrypt_ctx, &key, iv, padding)) {
+         return -1;
+@@ -314,6 +329,34 @@ namespace crypto {
+         cipher_t {EVP_CIPHER_CTX_new(), EVP_CIPHER_CTX_new(), key, padding} {
+     }
+ 
++    int cbc_t::decrypt(const std::string_view &cipher, std::vector<std::uint8_t> &plaintext, aes_t *iv) {
++      if (!decrypt_ctx && init_decrypt_cbc(decrypt_ctx, &key, iv, padding)) {
++        return -1;
++      }
++
++      // Calling with cipher == nullptr results in a parameter change
++      // without requiring a reallocation of the internal cipher ctx.
++      if (EVP_DecryptInit_ex(decrypt_ctx.get(), nullptr, nullptr, nullptr, iv->data()) != 1) {
++        return -1;
++      }
++
++      plaintext.resize(round_to_pkcs7_padded(cipher.size()));
++
++      int final_outlen;
++      int update_outlen;
++
++      if (EVP_DecryptUpdate(decrypt_ctx.get(), plaintext.data(), &update_outlen, (const std::uint8_t *) cipher.data(), (int) cipher.size()) != 1) {
++        return -1;
++      }
++
++      if (EVP_DecryptFinal_ex(decrypt_ctx.get(), plaintext.data() + update_outlen, &final_outlen) != 1) {
++        return -1;
++      }
++
++      plaintext.resize(update_outlen + final_outlen);
++      return 0;
++    }
++
+     cbc_t::cbc_t(const aes_t &key, bool padding):
+         cipher_t {nullptr, nullptr, key, padding} {
+     }
+diff --git a/src/crypto.h b/src/crypto.h
+index 6622c17d..30b35c03 100644
+--- a/src/crypto.h
++++ b/src/crypto.h
+@@ -364,6 +364,16 @@ namespace crypto {
+        * @return The total length of the ciphertext written into cipher. Returns -1 in case of an error.
+        */
+       int encrypt(const std::string_view &plaintext, std::uint8_t *cipher, aes_t *iv);
++
++      /**
++       * @brief Decrypt ciphertext using AES CBC mode.
++       *
++       * @param cipher The ciphertext to decrypt.
++       * @param plaintext Buffer that receives the decrypted plaintext.
++       * @param iv The initialization vector to be used for the decryption.
++       * @return 0 on success, -1 on error.
++       */
++      int decrypt(const std::string_view &cipher, std::vector<std::uint8_t> &plaintext, aes_t *iv);
+     };
+   }  // namespace cipher
+ }  // namespace crypto
+diff --git a/src/mic_mixer.cpp b/src/mic_mixer.cpp
+new file mode 100644
+index 00000000..c9e0af70
+--- /dev/null
++++ b/src/mic_mixer.cpp
+@@ -0,0 +1,430 @@
++/**
++ * @file src/mic_mixer.cpp
++ * @brief Per-session Opus decoding and host microphone mixing.
++ */
++#include "mic_mixer.h"
++
++#include <algorithm>
++#include <cstdint>
++#include <iterator>
++#include <limits>
++#include <memory>
++#include <unordered_map>
++#include <utility>
++#include <vector>
++
++#include <boost/container/flat_map.hpp>
++#include <opus/opus.h>
++
++namespace mic_mixer {
++  namespace {
++    constexpr int channels = 1;
++    // Keep the initial two-frame playout delay unchanged. This is only the
++    // bounded packet capacity used to absorb short arrival bursts.
++    constexpr std::size_t max_buffered_packets = 8;
++    // Leave enough timeline horizon for the enlarged bounded queue to absorb
++    // a burst before treating the packet as a discontinuity.
++    constexpr std::int64_t max_future_frames = static_cast<std::int64_t>(max_buffered_packets * 2);
++    constexpr std::int64_t timestamp_discontinuity_ms = 200;
++    constexpr std::size_t max_consecutive_plc_frames = jitter_buffer_frames;
++    constexpr std::int64_t overflow_recovery_window_frames = 250;
++    constexpr std::int64_t overflow_reanchor_cooldown_frames = 100;
++    constexpr std::size_t overflow_recovery_threshold = 10;
++
++    struct opus_decoder_deleter_t {
++      void
++      operator()(OpusDecoder *decoder) const noexcept {
++        if (decoder) {
++          opus_decoder_destroy(decoder);
++        }
++      }
++    };
++
++    using opus_decoder_t = std::unique_ptr<OpusDecoder, opus_decoder_deleter_t>;
++
++    struct queued_packet_t {
++      std::vector<std::uint8_t> payload;
++    };
++
++    struct source_t {
++      opus_decoder_t decoder;
++      std::optional<std::uint16_t> max_sequence;
++      std::int64_t max_extended_sequence {0};
++      std::optional<std::uint32_t> max_timestamp_ms;
++
++      std::int64_t anchor_playout_slot {0};
++
++      std::optional<std::uint16_t> expected_restart_sequence;
++      boost::container::flat_map<std::int64_t, queued_packet_t> packets;
++      std::vector<std::int16_t> decode_buffer = std::vector<std::int16_t>(frame_samples);
++      bool playout_started {false};
++      std::size_t consecutive_plc_frames {0};
++      std::size_t overflow_events {0};
++      std::int64_t overflow_window_start_slot {-1};
++      std::int64_t last_reanchor_slot {-1};
++    };
++
++    std::int32_t
++    sequence_distance(std::uint16_t newer, std::uint16_t older) noexcept {
++      const auto distance = static_cast<std::uint16_t>(newer - older);
++      return distance < 0x8000u ?
++               static_cast<std::int32_t>(distance) :
++               static_cast<std::int32_t>(distance) - 0x10000;
++    }
++
++    std::int64_t
++    timestamp_distance(std::uint32_t newer, std::uint32_t older) noexcept {
++      const auto distance = static_cast<std::uint32_t>(newer - older);
++      return distance < 0x80000000u ?
++               static_cast<std::int64_t>(distance) :
++               static_cast<std::int64_t>(distance) - 0x100000000LL;
++    }
++
++    void
++    reset_decoder(source_t &source) {
++      (void) opus_decoder_ctl(source.decoder.get(), OPUS_RESET_STATE);
++    }
++
++    void
++    reset_timeline(
++      source_t &source,
++      std::uint16_t sequence_number,
++      std::optional<std::uint32_t> timestamp_ms,
++      std::int64_t playout_slot
++    ) {
++      reset_decoder(source);
++      source.max_sequence = sequence_number;
++      source.max_extended_sequence = 0;
++      source.max_timestamp_ms = timestamp_ms;
++      source.anchor_playout_slot = playout_slot;
++      source.expected_restart_sequence.reset();
++      source.packets.clear();
++      source.playout_started = false;
++      source.consecutive_plc_frames = 0;
++      source.overflow_events = 0;
++      source.overflow_window_start_slot = -1;
++      source.last_reanchor_slot = -1;
++    }
++
++    bool
++    queue_packet(
++      source_t &source,
++      stats_t &stats,
++      std::int64_t playout_slot,
++      std::int64_t current_playout_slot,
++      const std::uint8_t *data,
++      std::size_t size) {
++      auto [packet_it, inserted] = source.packets.emplace(
++        playout_slot,
++        queued_packet_t {std::vector<std::uint8_t> {data, data + size}}
++      );
++      if (!inserted) {
++        ++stats.duplicate_packets;
++        return false;
++      }
++
++      if (source.packets.size() <= max_buffered_packets) {
++        // Keep overflow events within the active time window even when the
++        // queue briefly drains. Otherwise repeated short bursts never reach
++        // the recovery threshold.
++        return true;
++      }
++
++      // For real-time input, keep the data closest to the playout clock and drop the furthest future packet first.
++      ++stats.buffer_overflow_packets;
++      if (source.overflow_events == 0) {
++        source.overflow_window_start_slot = current_playout_slot;
++      }
++      ++source.overflow_events;
++      auto furthest = std::prev(source.packets.end());
++      const auto kept = furthest != packet_it;
++      source.packets.erase(furthest);
++      return kept;
++    }
++
++    bool
++    decode_frame(source_t &source, const queued_packet_t *packet) {
++      const auto decoded_samples = opus_decode(
++        source.decoder.get(),
++        packet ? packet->payload.data() : nullptr,
++        packet ? static_cast<opus_int32>(packet->payload.size()) : 0,
++        source.decode_buffer.data(),
++        static_cast<int>(frame_samples),
++        0);
++      if (decoded_samples != static_cast<int>(frame_samples)) {
++        return false;
++      }
++      return true;
++    }
++  }  // namespace
++
++  struct mixer_t::impl_t {
++    std::unordered_map<source_id_t, source_t> sources;
++    std::int64_t next_playout_slot {0};
++    std::vector<std::int64_t> mix_sums = std::vector<std::int64_t>(frame_samples);
++    stats_t stats;
++  };
++
++  mixer_t::mixer_t():
++      impl_ {std::make_unique<impl_t>()} {}
++
++  mixer_t::~mixer_t() = default;
++
++  bool
++  is_valid_opus_packet(const std::uint8_t *data, std::size_t size) {
++    if (!data || size == 0 || size > static_cast<std::size_t>(std::numeric_limits<opus_int32>::max())) {
++      return false;
++    }
++    const auto samples = opus_packet_get_nb_samples(data, static_cast<opus_int32>(size), sample_rate);
++    return samples == static_cast<int>(frame_samples);
++  }
++
++  bool
++  mixer_t::add_source(source_id_t source_id) {
++    if (impl_->sources.contains(source_id)) {
++      return true;
++    }
++
++    int error = OPUS_OK;
++    opus_decoder_t decoder {opus_decoder_create(sample_rate, channels, &error)};
++    if (!decoder || error != OPUS_OK) {
++      return false;
++    }
++
++    source_t source;
++    source.decoder = std::move(decoder);
++    source.packets.reserve(max_buffered_packets + 1);
++    impl_->sources.emplace(source_id, std::move(source));
++    return true;
++  }
++
++  void
++  mixer_t::remove_source(source_id_t source_id) {
++    impl_->sources.erase(source_id);
++  }
++
++  void
++  mixer_t::clear() {
++    impl_->sources.clear();
++    impl_->next_playout_slot = 0;
++  }
++
++  bool
++  mixer_t::push_packet(
++    source_id_t source_id,
++    const std::uint8_t *data,
++    std::size_t size,
++    std::uint16_t sequence_number,
++    std::optional<std::uint32_t> timestamp_ms
++  ) {
++    auto source_it = impl_->sources.find(source_id);
++    if (source_it == impl_->sources.end() || !is_valid_opus_packet(data, size)) {
++      return false;
++    }
++
++    auto &source = source_it->second;
++    if (!source.max_sequence) {
++      reset_timeline(
++        source,
++        sequence_number,
++        timestamp_ms,
++        impl_->next_playout_slot + static_cast<std::int64_t>(jitter_buffer_frames)
++      );
++      return queue_packet(source, impl_->stats, source.anchor_playout_slot, impl_->next_playout_slot, data, size);
++    }
++
++    const auto distance = sequence_distance(sequence_number, *source.max_sequence);
++    if (distance == 0) {
++      ++impl_->stats.duplicate_packets;
++      return false;
++    }
++
++    const auto extended_sequence = source.max_extended_sequence + distance;
++    const auto target_slot = source.anchor_playout_slot + extended_sequence;
++
++    if (distance < 0 && target_slot < impl_->next_playout_slot) {
++      // Detect a source restart as described in RFC 3550: the first out-of-order rollback only records
++      // the next expected sequence number, and a run of following packets confirms the restart, so a
++      if (!source.expected_restart_sequence || sequence_number != *source.expected_restart_sequence) {
++        source.expected_restart_sequence = static_cast<std::uint16_t>(sequence_number + 1);
++        ++impl_->stats.late_packets;
++        return false;
++      }
++
++      ++impl_->stats.timeline_reanchors;
++      reset_timeline(
++        source,
++        sequence_number,
++        timestamp_ms,
++        impl_->next_playout_slot + static_cast<std::int64_t>(jitter_buffer_frames)
++      );
++      return queue_packet(source, impl_->stats, source.anchor_playout_slot, impl_->next_playout_slot, data, size);
++    }
++
++    if (distance > 0) {
++      bool timestamp_discontinuous = false;
++      if (timestamp_ms && source.max_timestamp_ms) {
++        const auto packet_time_delta = timestamp_distance(*timestamp_ms, *source.max_timestamp_ms);
++        const auto expected_time_delta = static_cast<std::int64_t>(distance) * 20;
++        const auto timestamp_error = packet_time_delta - expected_time_delta;
++        timestamp_discontinuous = packet_time_delta < 0 ||
++                                  timestamp_error > timestamp_discontinuity_ms ||
++                                  timestamp_error < -timestamp_discontinuity_ms;
++      }
++      const auto too_far_ahead = target_slot > impl_->next_playout_slot + max_future_frames;
++      const auto inactive_timeline_expired = !source.playout_started &&
++                                             target_slot < impl_->next_playout_slot;
++
++      if (timestamp_discontinuous || too_far_ahead || inactive_timeline_expired) {
++        // After a client pause, a clock jump, a long packet gap or an inactive timeline expiring,
++        // do not chase the old timeline: re-buffer two frames from the current host playout clock.
++        ++impl_->stats.timeline_reanchors;
++        reset_timeline(
++          source,
++          sequence_number,
++          timestamp_ms,
++          impl_->next_playout_slot + static_cast<std::int64_t>(jitter_buffer_frames)
++        );
++        return queue_packet(source, impl_->stats, source.anchor_playout_slot, impl_->next_playout_slot, data, size);
++      }
++
++      source.max_sequence = sequence_number;
++      source.max_extended_sequence = extended_sequence;
++      source.max_timestamp_ms = timestamp_ms;
++      source.expected_restart_sequence.reset();
++    }
++    else {
++      // An out-of-order packet that still lands in a not-yet-played slot belongs to the current
++      // timeline, so a restart candidate from an expired packet is cleared to keep later stale packets
++      source.expected_restart_sequence.reset();
++    }
++
++    if (target_slot < impl_->next_playout_slot) {
++      ++impl_->stats.late_packets;
++      return false;
++    }
++
++    if (source.overflow_window_start_slot >= 0 &&
++        impl_->next_playout_slot - source.overflow_window_start_slot > overflow_recovery_window_frames) {
++      source.overflow_events = 0;
++      source.overflow_window_start_slot = -1;
++    }
++
++    const auto overflow_window_active =
++      source.overflow_window_start_slot >= 0 &&
++      impl_->next_playout_slot - source.overflow_window_start_slot <= overflow_recovery_window_frames;
++    if (source.overflow_events >= overflow_recovery_threshold &&
++        overflow_window_active &&
++        (source.last_reanchor_slot < 0 ||
++         impl_->next_playout_slot - source.last_reanchor_slot > overflow_reanchor_cooldown_frames)) {
++      ++impl_->stats.timeline_reanchors;
++      reset_timeline(
++        source,
++        sequence_number,
++        timestamp_ms,
++        impl_->next_playout_slot + static_cast<std::int64_t>(jitter_buffer_frames)
++      );
++      source.last_reanchor_slot = impl_->next_playout_slot;
++      return queue_packet(source, impl_->stats, source.anchor_playout_slot, impl_->next_playout_slot, data, size);
++    }
++
++    return queue_packet(source, impl_->stats, target_slot, impl_->next_playout_slot, data, size);
++  }
++
++  std::optional<std::vector<std::int16_t>>
++  mixer_t::mix_next_frame() {
++    const auto playout_slot = impl_->next_playout_slot++;
++    std::fill(impl_->mix_sums.begin(), impl_->mix_sums.end(), 0);
++    std::size_t source_count = 0;
++    for (auto &[source_id, source] : impl_->sources) {
++      (void) source_id;
++
++      while (!source.packets.empty() && source.packets.begin()->first < playout_slot) {
++        source.packets.erase(source.packets.begin());
++      }
++
++      const queued_packet_t *packet = nullptr;
++      auto packet_it = source.packets.find(playout_slot);
++      if (packet_it != source.packets.end()) {
++        packet = &packet_it->second;
++      }
++      else if (!source.playout_started) {
++        continue;
++      }
++      else if (source.consecutive_plc_frames >= max_consecutive_plc_frames) {
++        // A session with no data for a long time must not keep contributing to the mix denominator, or it
++        reset_decoder(source);
++        source.playout_started = false;
++        source.consecutive_plc_frames = 0;
++        continue;
++      }
++
++      if (!decode_frame(source, packet)) {
++        ++impl_->stats.decode_failures;
++        if (packet) {
++          source.packets.erase(packet_it);
++        }
++        reset_decoder(source);
++        source.playout_started = false;
++        continue;
++      }
++
++      if (packet) {
++        source.packets.erase(packet_it);
++        source.playout_started = true;
++        source.consecutive_plc_frames = 0;
++      }
++      else {
++        ++impl_->stats.plc_frames;
++        ++source.consecutive_plc_frames;
++      }
++
++      ++source_count;
++      for (std::size_t sample_index = 0; sample_index < source.decode_buffer.size(); ++sample_index) {
++        impl_->mix_sums[sample_index] += source.decode_buffer[sample_index];
++      }
++    }
++
++    if (source_count == 0) {
++      return std::nullopt;
++    }
++
++    std::vector<std::int16_t> mixed(frame_samples, 0);
++    for (std::size_t sample_index = 0; sample_index < frame_samples; ++sample_index) {
++      const auto averaged = impl_->mix_sums[sample_index] / static_cast<std::int64_t>(source_count);
++      mixed[sample_index] = static_cast<std::int16_t>(std::clamp<std::int64_t>(
++        averaged,
++        std::numeric_limits<std::int16_t>::min(),
++        std::numeric_limits<std::int16_t>::max()));
++    }
++
++    return mixed;
++  }
++
++  void
++  mixer_t::skip_playout_frames(std::size_t frame_count) {
++    if (frame_count == 0) {
++      return;
++    }
++
++    impl_->next_playout_slot += static_cast<std::int64_t>(frame_count);
++    impl_->stats.skipped_playout_frames += frame_count;
++    for (auto &[source_id, source] : impl_->sources) {
++      (void) source_id;
++      while (!source.packets.empty() && source.packets.begin()->first < impl_->next_playout_slot) {
++        source.packets.erase(source.packets.begin());
++      }
++      reset_decoder(source);
++      source.playout_started = false;
++      source.consecutive_plc_frames = 0;
++      source.overflow_events = 0;
++      source.overflow_window_start_slot = -1;
++      source.last_reanchor_slot = -1;
++    }
++  }
++
++  stats_t
++  mixer_t::take_stats() {
++    return std::exchange(impl_->stats, {});
++  }
++}  // namespace mic_mixer
+diff --git a/src/mic_mixer.h b/src/mic_mixer.h
+new file mode 100644
+index 00000000..d70fee4e
+--- /dev/null
++++ b/src/mic_mixer.h
+@@ -0,0 +1,99 @@
++/**
++ * @file src/mic_mixer.h
++ * @brief Per-session Opus decoding and host microphone mixing.
++ */
++#pragma once
++
++#include <cstddef>
++#include <cstdint>
++#include <memory>
++#include <optional>
++#include <vector>
++
++namespace mic_mixer {
++  using source_id_t = std::uint32_t;
++
++  constexpr std::uint32_t sample_rate = 48000;
++  constexpr std::size_t frame_samples = sample_rate / 50;
++  constexpr std::size_t jitter_buffer_frames = 2;
++
++  struct stats_t {
++    std::uint64_t duplicate_packets {0};
++    std::uint64_t late_packets {0};
++    std::uint64_t buffer_overflow_packets {0};
++    std::uint64_t timeline_reanchors {0};
++    std::uint64_t plc_frames {0};
++    std::uint64_t decode_failures {0};
++    std::uint64_t skipped_playout_frames {0};
++  };
++
++  /**
++   * @brief Validate that a payload contains a decodable Opus packet shape.
++   */
++  bool
++  is_valid_opus_packet(const std::uint8_t *data, std::size_t size);
++
++  class mixer_t {
++  public:
++    // This type has no internal synchronization: every member function must be called serially
++    // by the microphone receive thread.
++    mixer_t();
++    ~mixer_t();
++
++    mixer_t(const mixer_t &) = delete;
++    mixer_t &operator=(const mixer_t &) = delete;
++
++    /**
++     * @brief Add an independently decoded microphone source.
++     */
++    bool
++    add_source(source_id_t source_id);
++
++    /**
++     * @brief Remove a microphone source and its queued audio.
++     */
++    void
++    remove_source(source_id_t source_id);
++
++    /**
++     * @brief Remove every microphone source.
++     */
++    void
++    clear();
++
++    /**
++     * @brief Queue one Opus packet for a source's playout timeline.
++     */
++    bool
++    push_packet(
++      source_id_t source_id,
++      const std::uint8_t *data,
++      std::size_t size,
++      std::uint16_t sequence_number,
++      std::optional<std::uint32_t> timestamp_ms
++    );
++
++    /**
++     * @brief Mix one queued frame from every source into a mono PCM frame.
++     * @return An empty optional when no source currently has audio queued.
++     */
++    std::optional<std::vector<std::int16_t>>
++    mix_next_frame();
++
++    /**
++     * @brief Advance the playout clock without decoding missed frames.
++     */
++    void
++    skip_playout_frames(std::size_t frame_count);
++
++    /**
++     * @brief Return and reset diagnostics accumulated by the mixer thread.
++     */
++    stats_t
++    take_stats();
++
++  private:
++    struct impl_t;
++    std::unique_ptr<impl_t> impl_;
++  };
++}  // namespace mic_mixer
+diff --git a/src/platform/common.h b/src/platform/common.h
+index 365f9a6f..cc31eb55 100644
+--- a/src/platform/common.h
++++ b/src/platform/common.h
+@@ -859,6 +859,38 @@ namespace platf {
+      */
+     virtual std::optional<sink_t> sink_info() = 0;
+ 
++    /**
++     * @brief Create the virtual microphone that receives client microphone audio.
++     *
++     * The device is created once per broadcast and shared by every session; the
++     * microphone receive thread calls this before its first write.
++     *
++     * @return 0 on success, -1 when the platform has no virtual microphone.
++     */
++    virtual int init_mic_redirect_device() {
++      return -1;
++    }
++
++    /**
++     * @brief Destroy the virtual microphone created by init_mic_redirect_device().
++     *
++     * Safe to call when no device was created.
++     */
++    virtual void release_mic_redirect_device() {
++    }
++
++    /**
++     * @brief Write one mono 48 kHz signed 16-bit PCM frame to the virtual microphone.
++     *
++     * @param samples Pointer to the mono samples.
++     * @param frame_count Number of mono frames to write.
++     * @return Number of bytes written, 0 when the frame was dropped due to
++     *         backpressure, -1 on error, or -2 when the backend became unavailable.
++     */
++    virtual int write_mic_pcm([[maybe_unused]] const std::int16_t *samples, [[maybe_unused]] std::size_t frame_count) {
++      return -1;
++    }
++
+     /**
+      * @brief Destroy the audio control.
+      */
+diff --git a/src/platform/linux/audio.cpp b/src/platform/linux/audio.cpp
+index 43db87b1..95e0b605 100644
+--- a/src/platform/linux/audio.cpp
++++ b/src/platform/linux/audio.cpp
+@@ -16,6 +16,9 @@
+ #include <pulse/simple.h>
+ 
+ // local includes
++#ifdef SUNSHINE_BUILD_MIC_REDIRECT
++  #include "mic_redirect.h"
++#endif
+ #include "src/config.h"
+ #include "src/logging.h"
+ #include "src/platform/common.h"
+@@ -694,6 +697,20 @@ namespace platf {
+         return 0;
+       }
+ 
++#ifdef SUNSHINE_BUILD_MIC_REDIRECT
++      int init_mic_redirect_device() override {
++        return mic_redirect::init();
++      }
++
++      void release_mic_redirect_device() override {
++        mic_redirect::release();
++      }
++
++      int write_mic_pcm(const std::int16_t *samples, std::size_t frame_count) override {
++        return mic_redirect::write(samples, frame_count);
++      }
++
++#endif
+       ~server_t() override {
+         unload_null(index.stereo);
+         unload_null(index.surround51);
+diff --git a/src/platform/linux/mic_redirect.cpp b/src/platform/linux/mic_redirect.cpp
+new file mode 100644
+index 00000000..9458ac54
+--- /dev/null
++++ b/src/platform/linux/mic_redirect.cpp
+@@ -0,0 +1,550 @@
++/**
++ * @file src/platform/linux/mic_redirect.cpp
++ * @brief PipeWire virtual microphone fed by client microphone audio.
++ *
++ * The host exposes one virtual source, `sunshine-mic`, that applications select as a
++ * microphone. It is created by `libpipewire-module-combine-stream` in `source` mode and
++ * fed by a private PipeWire stream carrying mono 48 kHz signed 16-bit PCM, so no module
++ * or config file has to be installed on the host.
++ */
++// standard includes
++#include <algorithm>
++#include <atomic>
++#include <cstddef>
++#include <cstdint>
++#include <cstdio>
++#include <cstdlib>
++#include <chrono>
++#include <cstring>
++#include <functional>
++#include <mutex>
++#include <string>
++#include <vector>
++
++// lib includes
++#include <pipewire/impl.h>
++#include <pipewire/pipewire.h>
++#include <spa/param/audio/format-utils.h>
++#include <spa/param/audio/raw.h>
++#include <spa/pod/builder.h>
++#include <spa/utils/keys.h>
++#include <spa/param/audio/raw-utils.h>
++
++// local includes
++#include "mic_redirect.h"
++#include "src/logging.h"
++
++namespace platf::mic_redirect {
++  using namespace std::literals;
++
++  namespace {
++    /// Node name applications select as the microphone.
++    constexpr auto source_node_name = "sunshine-mic";
++    /// Description shown for the microphone in device pickers.
++    constexpr auto source_node_description = "Sunshine Microphone";
++    /// Node name of the private stream that feeds the microphone.
++    constexpr auto feed_node_name = "sunshine-mic-feed";
++    /// Frames buffered between the receive thread and the graph. The graph pulls in whole
++    /// driver buffers, which can be far larger than one microphone frame, so the buffer has
++    /// to hold enough audio to satisfy one pull.
++    constexpr std::size_t ring_frames = sample_rate / 1000 * 400;
++    /// SPA node behind the virtual source: an adapter over a null sink, whose input ports accept
++    /// the audio pushed into it.
++    constexpr auto null_audio_sink_factory = "support.null-audio-sink";
++    /// Media class of that node. It has to be a source so that applications select the microphone
++    /// itself: as a sink they would only see its monitor, labelled "Monitor of ...".
++    constexpr auto virtual_source_class = "Audio/Source/Virtual";
++    /// Factory that creates the link delivering our audio into the virtual source.
++    constexpr auto link_factory = "link-factory";
++
++    /**
++     * @brief Single-producer single-consumer ring of mono 16-bit frames.
++     *
++     * The receive thread pushes whole frames, the graph thread pops what it needs and
++     * pads with silence, so a producer never blocks on a stalled graph.
++     */
++    struct ring_t {
++      std::vector<std::int16_t> data {ring_frames};  ///< Backing storage.
++      std::atomic<std::size_t> head {0};  ///< Next write index, monotonically increasing.
++      std::atomic<std::size_t> tail {0};  ///< Next read index, monotonically increasing.
++
++      /**
++       * @brief Append a whole frame, discarding the oldest audio if it does not fit.
++       * @return The frame count stored.
++       */
++      std::size_t push(const std::int16_t *samples, std::size_t count) {
++        const auto write = head.load(std::memory_order_relaxed);
++        auto read = tail.load(std::memory_order_acquire);
++
++        if (count >= ring_frames) {
++          // Keep the newest audio when a frame cannot fit at all.
++          read = write + count - ring_frames;
++        }
++        else if (write - read > ring_frames - count) {
++          // Discard the oldest audio instead of the newest: keeping the buffer full of stale
++          // audio would add latency that never drains.
++          read = write - (ring_frames - count);
++        }
++
++        tail.store(read, std::memory_order_release);
++
++        for (std::size_t i = 0; i < count; ++i) {
++          data[(write + i) % ring_frames] = samples[i];
++        }
++
++        head.store(write + count, std::memory_order_release);
++        return count;
++      }
++
++      /**
++       * @brief Pop up to `count` frames.
++       * @return The frame count read.
++       */
++      std::size_t pop(std::int16_t *out, std::size_t count) {
++        const auto read = tail.load(std::memory_order_relaxed);
++        const auto have = std::min(count, head.load(std::memory_order_acquire) - read);
++
++        for (std::size_t i = 0; i < have; ++i) {
++          out[i] = data[(read + i) % ring_frames];
++        }
++
++        tail.store(read + have, std::memory_order_release);
++        return have;
++      }
++    };
++
++
++    /**
++     * @brief Lifecycle of the PipeWire virtual source and its feed stream.
++     */
++    struct device_t {
++      pw_thread_loop *loop {nullptr};  ///< Owns the PipeWire main loop thread.
++      pw_context *context {nullptr};  ///< PipeWire context created on that loop.
++      pw_core *core {nullptr};  ///< Connection to the PipeWire daemon.
++      pw_registry *registry {nullptr};  ///< Registry used to learn the global ids of both nodes.
++      pw_registry_events registry_events {};  ///< Callbacks for registry globals.
++      spa_hook registry_listener {};  ///< Listener registered for those callbacks.
++      std::atomic<std::uint32_t> source_node_id {PW_ID_ANY};  ///< Global id of the virtual source.
++      std::atomic<std::uint32_t> feed_node_id {PW_ID_ANY};  ///< Global id of our feed stream node.
++      std::atomic<std::uint32_t> source_port_id {PW_ID_ANY};  ///< Global id of the source's input port.
++      std::atomic<std::uint32_t> feed_port_id {PW_ID_ANY};  ///< Global id of the stream's output port.
++      pw_proxy *source_node {nullptr};  ///< Proxy for the node applications capture as a microphone.
++      pw_proxy *link {nullptr};  ///< Link delivering the feed stream into the virtual source.
++      pw_stream *stream {nullptr};  ///< Private stream writing into the virtual source.
++      pw_stream_events events {};  ///< Callbacks, kept alive for the stream's lifetime.
++      spa_hook stream_listener {};  ///< Listener registered for those callbacks.
++      ring_t ring;  ///< Audio waiting for the graph to consume it.
++      std::mutex mutex;  ///< Serializes init(), release() and write().
++      std::atomic<bool> connected {false};  ///< Whether the feed stream is streaming.
++      std::atomic<bool> failed {false};  ///< Whether PipeWire reported an error for the feed.
++      bool failure_logged {false};  ///< Whether the current failure has been reported.
++    };
++
++    device_t device;
++
++    /**
++     * @brief Fill one graph buffer from the ring, padding with silence.
++     */
++    void on_process(void *userdata) {
++      auto *self = static_cast<device_t *>(userdata);
++
++      auto *buffer = pw_stream_dequeue_buffer(self->stream);
++      if (!buffer) {
++        return;
++      }
++
++      auto *spa_buffer = &buffer->buffer->datas[0];
++      spa_buffer->chunk->offset = 0;
++      spa_buffer->chunk->stride = sizeof(std::int16_t);
++
++      const auto requested = spa_buffer->maxsize / sizeof(std::int16_t);
++      auto *destination = static_cast<std::int16_t *>(spa_buffer->data);
++      if (!destination || requested == 0) {
++        spa_buffer->chunk->size = 0;
++        pw_stream_queue_buffer(self->stream, buffer);
++        return;
++      }
++
++      const auto filled = self->ring.pop(destination, requested);
++      if (filled < requested) {
++        std::memset(destination + filled, 0, (requested - filled) * sizeof(std::int16_t));
++      }
++
++      spa_buffer->chunk->size = requested * sizeof(std::int16_t);
++      pw_stream_queue_buffer(self->stream, buffer);
++    }
++
++    /**
++     * @brief Learn the global ids of the virtual source and of our own feed stream.
++     *
++     * A node created from the adapter factory, and a stream's node, are only addressable by the
++     * ids the registry reports, which is what the link is created with.
++     */
++    void on_registry_global(void *userdata, uint32_t id, uint32_t /*permissions*/, const char *type, uint32_t /*version*/, const spa_dict *props) {
++      auto *self = static_cast<device_t *>(userdata);
++      if (!type || !props) {
++        return;
++      }
++
++
++      if (std::strcmp(type, PW_TYPE_INTERFACE_Node) == 0) {
++        const auto *name = spa_dict_lookup(props, PW_KEY_NODE_NAME);
++        if (!name) {
++          return;
++        }
++
++        if (std::strcmp(name, source_node_name) == 0) {
++          self->source_node_id.store(id, std::memory_order_release);
++        }
++        else if (std::strcmp(name, feed_node_name) == 0) {
++          self->feed_node_id.store(id, std::memory_order_release);
++        }
++        else {
++          return;
++        }
++      }
++      else if (std::strcmp(type, PW_TYPE_INTERFACE_Port) == 0) {
++        // A port carries no node name, but its object.path starts with the node name. The
++        // trailing colon keeps "sunshine-mic" from matching the "sunshine-mic-feed" stream.
++        const auto *path = spa_dict_lookup(props, SPA_KEY_OBJECT_PATH);
++        const auto *direction = spa_dict_lookup(props, PW_KEY_PORT_DIRECTION);
++        if (!path || !direction || std::strcmp(direction, "out") != 0) {
++          if (!path || !direction || std::strcmp(direction, "in") != 0) {
++            return;
++          }
++        }
++
++        const std::string_view object_path {path};
++        if (std::strcmp(direction, "out") == 0 && object_path.rfind(std::string {feed_node_name} + ":", 0) == 0) {
++          self->feed_port_id.store(id, std::memory_order_release);
++        }
++        else if (std::strcmp(direction, "in") == 0 && object_path.rfind(std::string {source_node_name} + ":", 0) == 0) {
++          self->source_port_id.store(id, std::memory_order_release);
++        }
++        else {
++          return;
++        }
++      }
++      else {
++        return;
++      }
++
++      pw_thread_loop_signal(self->loop, false);
++    }
++
++    /**
++     * @brief Track whether the feed stream still accepts audio.
++     */
++    void on_stream_state_changed(void *userdata, pw_stream_state /*old_state*/, pw_stream_state state, const char *error) {
++      auto *self = static_cast<device_t *>(userdata);
++
++      switch (state) {
++        case PW_STREAM_STATE_STREAMING:
++          self->connected.store(true, std::memory_order_release);
++          self->failed.store(false, std::memory_order_release);
++          break;
++        case PW_STREAM_STATE_ERROR:
++          BOOST_LOG(warning) << "PipeWire microphone feed error: "sv << (error ? error : "unknown");
++          self->connected.store(false, std::memory_order_release);
++          self->failed.store(true, std::memory_order_release);
++          break;
++        case PW_STREAM_STATE_UNCONNECTED:
++          self->connected.store(false, std::memory_order_release);
++          break;
++        default:
++          break;
++      }
++    }
++
++    /**
++     * @brief Report a failure to build the virtual microphone.
++     *
++     * The receive thread retries with backoff for as long as a session is registered, so
++     * only the first failure of an episode is logged.
++     *
++     * @param reason Short description of the failed step.
++     */
++    void log_failure(std::string_view reason) {
++      if (device.failure_logged) {
++        BOOST_LOG(debug) << "Virtual microphone unavailable: "sv << reason;
++        return;
++      }
++
++      device.failure_logged = true;
++      BOOST_LOG(warning) << "Couldn't create the virtual microphone: "sv << reason
++                         << " (client microphone audio will be unavailable)"sv;
++    }
++
++    /**
++     * @brief Destroy the stream, module and core connection.
++     *
++     * The caller must hold the PipeWire loop lock when the loop is running.
++     */
++    void destroy() {
++      if (device.link) {
++        pw_proxy_destroy(device.link);
++        device.link = nullptr;
++      }
++      if (device.stream) {
++        pw_stream_destroy(device.stream);
++        device.stream = nullptr;
++      }
++      if (device.source_node) {
++        pw_proxy_destroy(device.source_node);
++        device.source_node = nullptr;
++      }
++      if (device.registry) {
++        spa_hook_remove(&device.registry_listener);
++        pw_proxy_destroy(reinterpret_cast<pw_proxy *>(device.registry));
++        device.registry = nullptr;
++      }
++      device.source_node_id.store(PW_ID_ANY, std::memory_order_release);
++      device.feed_node_id.store(PW_ID_ANY, std::memory_order_release);
++      device.source_port_id.store(PW_ID_ANY, std::memory_order_release);
++      device.feed_port_id.store(PW_ID_ANY, std::memory_order_release);
++      if (device.core) {
++        pw_core_disconnect(device.core);
++        device.core = nullptr;
++      }
++      device.connected.store(false, std::memory_order_release);
++      device.failed.store(false, std::memory_order_release);
++    }
++  }  // namespace
++
++  int init() {
++    std::lock_guard<std::mutex> lock(device.mutex);
++    if (device.stream) {
++      return 0;
++    }
++
++    pw_init(nullptr, nullptr);
++
++    device.loop = pw_thread_loop_new("sunshine-mic", nullptr);
++    if (!device.loop) {
++      log_failure("couldn't create the PipeWire thread loop"sv);
++      return -1;
++    }
++
++    device.context = pw_context_new(pw_thread_loop_get_loop(device.loop), nullptr, 0);
++    if (!device.context) {
++      log_failure("couldn't create the PipeWire context"sv);
++      pw_thread_loop_destroy(device.loop);
++      device.loop = nullptr;
++      return -1;
++    }
++
++    if (pw_thread_loop_start(device.loop) < 0) {
++      log_failure("couldn't start the PipeWire thread loop"sv);
++      pw_context_destroy(device.context);
++      device.context = nullptr;
++      pw_thread_loop_destroy(device.loop);
++      device.loop = nullptr;
++      return -1;
++    }
++
++    pw_thread_loop_lock(device.loop);
++
++    // Tear everything down from the locked context: PipeWire objects may only be destroyed
++    // while the thread loop lock is held.
++    const auto abandon = [](std::string_view reason) {
++      log_failure(reason);
++      destroy();
++      pw_thread_loop_unlock(device.loop);
++      pw_context_destroy(device.context);
++      device.context = nullptr;
++      pw_thread_loop_stop(device.loop);
++      pw_thread_loop_destroy(device.loop);
++      device.loop = nullptr;
++      return -1;
++    };
++
++    device.core = pw_context_connect(device.context, nullptr, 0);
++    if (!device.core) {
++      return abandon("couldn't connect to the PipeWire daemon"sv);
++    }
++
++    // The registry has to exist before the nodes are created, so the events announcing them are
++    // delivered to us.
++    device.registry = pw_core_get_registry(device.core, PW_VERSION_REGISTRY, 0);
++    if (device.registry) {
++      device.registry_events = {};
++      device.registry_events.version = PW_VERSION_REGISTRY_EVENTS;
++      device.registry_events.global = on_registry_global;
++      pw_registry_add_listener(device.registry, &device.registry_listener, &device.registry_events, &device);
++    }
++
++    // Publish the microphone as a virtual source: applications select it directly as a
++    // microphone, and our own stream is linked into its input.
++    auto *node_properties = pw_properties_new(
++      PW_KEY_FACTORY_NAME, null_audio_sink_factory,
++      PW_KEY_NODE_NAME, source_node_name,
++      PW_KEY_NODE_DESCRIPTION, source_node_description,
++      PW_KEY_MEDIA_CLASS, virtual_source_class,
++      SPA_KEY_AUDIO_POSITION, "MONO",
++      SPA_KEY_AUDIO_CHANNELS, "1",
++      SPA_KEY_AUDIO_RATE, "48000",
++      SPA_KEY_AUDIO_FORMAT, "F32LE",
++      // Drive the graph in small quanta: as the graph driver this node otherwise picks a
++      // buffer far larger than the microphone frame, which would drop most of the audio.
++      PW_KEY_NODE_RATE, "1/48000",
++      PW_KEY_NODE_FORCE_QUANTUM, "960",
++      PW_KEY_OBJECT_LINGER, "true",
++      nullptr);
++
++    device.source_node = static_cast<pw_proxy *>(
++      pw_core_create_object(device.core, "adapter", PW_TYPE_INTERFACE_Node, PW_VERSION_NODE, &node_properties->dict, 0));
++    pw_properties_free(node_properties);
++
++    if (!device.source_node) {
++      return abandon("couldn't create the virtual source node"sv);
++    }
++
++    // pw_core_sync() only queues a round-trip and reports progress through the done event, so the
++    // wait is driven by the registry event that carries the node id.
++    // The nodes and their ports are announced by the registry, and the ports only appear once the
++    // session manager has configured the node, so this waits on wall-clock time rather than on the
++    // number of round-trips: every registry event signals the loop.
++    const auto await = [&](const std::function<bool()> &resolved) {
++      const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
++      while (!resolved() && std::chrono::steady_clock::now() < deadline) {
++        pw_thread_loop_timed_wait(device.loop, 1);
++      }
++
++      return resolved();
++    };
++
++    if (!await([&] {
++          return device.source_node_id.load(std::memory_order_acquire) != PW_ID_ANY &&
++                 device.source_port_id.load(std::memory_order_acquire) != PW_ID_ANY;
++        })) {
++      return abandon("couldn't find the PipeWire microphone node"sv);
++    }
++
++
++    device.events = {};
++    device.events.version = PW_VERSION_STREAM_EVENTS;
++    device.events.state_changed = on_stream_state_changed;
++    device.events.process = on_process;
++
++    auto *stream_properties = pw_properties_new(
++      PW_KEY_NODE_NAME, feed_node_name,
++      PW_KEY_NODE_DESCRIPTION, "Sunshine microphone feed",
++      PW_KEY_MEDIA_TYPE, "Audio",
++      PW_KEY_MEDIA_CATEGORY, "Playback",
++      PW_KEY_MEDIA_ROLE, "Communication",
++      PW_KEY_NODE_AUTOCONNECT, "false",
++      PW_KEY_NODE_DONT_RECONNECT, "true",
++      nullptr);
++
++    device.stream = pw_stream_new(device.core, "sunshine-mic", stream_properties);
++    if (!device.stream) {
++      return abandon("couldn't create the PipeWire feed stream"sv);
++    }
++
++    pw_stream_add_listener(device.stream, &device.stream_listener, &device.events, &device);
++
++    spa_audio_info_raw audio_info {};
++    audio_info.format = SPA_AUDIO_FORMAT_S16;
++    audio_info.rate = sample_rate;
++    audio_info.channels = 1;
++    audio_info.position[0] = SPA_AUDIO_CHANNEL_MONO;
++
++    std::uint8_t pod_buffer[1024];
++    spa_pod_builder builder = SPA_POD_BUILDER_INIT(pod_buffer, sizeof(pod_buffer));
++    const spa_pod *params[1] {spa_format_audio_raw_build(&builder, SPA_PARAM_EnumFormat, &audio_info)};
++
++    const auto flags = static_cast<pw_stream_flags>(PW_STREAM_FLAG_MAP_BUFFERS | PW_STREAM_FLAG_RT_PROCESS);
++    if (pw_stream_connect(device.stream, PW_DIRECTION_OUTPUT, PW_ID_ANY, flags, params, 1) < 0) {
++      return abandon("couldn't connect the PipeWire feed stream"sv);
++    }
++
++    if (!await([&] {
++          return device.feed_node_id.load(std::memory_order_acquire) != PW_ID_ANY &&
++                 device.feed_port_id.load(std::memory_order_acquire) != PW_ID_ANY;
++        })) {
++      return abandon("couldn't find the PipeWire microphone feed node"sv);
++    }
++
++    // A playback stream cannot be routed into a source node by session-manager policy, so the
++    // link that carries the audio is created here.
++    auto *link_properties = pw_properties_new(
++      PW_KEY_LINK_OUTPUT_NODE, std::to_string(device.feed_node_id.load(std::memory_order_acquire)).c_str(),
++      PW_KEY_LINK_OUTPUT_PORT, std::to_string(device.feed_port_id.load(std::memory_order_acquire)).c_str(),
++      PW_KEY_LINK_INPUT_NODE, std::to_string(device.source_node_id.load(std::memory_order_acquire)).c_str(),
++      PW_KEY_LINK_INPUT_PORT, std::to_string(device.source_port_id.load(std::memory_order_acquire)).c_str(),
++      nullptr);
++
++    device.link = static_cast<pw_proxy *>(
++      pw_core_create_object(device.core, link_factory, PW_TYPE_INTERFACE_Link, PW_VERSION_LINK, &link_properties->dict, 0));
++    pw_properties_free(link_properties);
++
++    if (!device.link) {
++      return abandon("couldn't link the feed stream into the virtual microphone"sv);
++    }
++
++    pw_thread_loop_unlock(device.loop);
++
++    device.failure_logged = false;
++    BOOST_LOG(info) << "Virtual microphone ["sv << source_node_name << "] created"sv;
++    return 0;
++  }
++
++  void release() {
++    std::lock_guard<std::mutex> lock(device.mutex);
++    if (!device.loop && !device.context) {
++      return;
++    }
++
++    if (device.loop) {
++      pw_thread_loop_lock(device.loop);
++    }
++
++    destroy();
++
++    if (device.loop) {
++      pw_thread_loop_unlock(device.loop);
++    }
++
++    if (device.context) {
++      pw_context_destroy(device.context);
++      device.context = nullptr;
++    }
++
++    if (device.loop) {
++      pw_thread_loop_stop(device.loop);
++      pw_thread_loop_destroy(device.loop);
++      device.loop = nullptr;
++    }
++
++    device.ring.head.store(0, std::memory_order_relaxed);
++    device.ring.tail.store(0, std::memory_order_relaxed);
++
++    BOOST_LOG(info) << "Virtual microphone released"sv;
++  }
++
++  int write(const std::int16_t *samples, std::size_t frame_count) {
++    if (!samples || frame_count == 0) {
++      return -1;
++    }
++
++    std::lock_guard<std::mutex> lock(device.mutex);
++    if (!device.stream) {
++      return -1;
++    }
++    if (device.failed.load(std::memory_order_acquire)) {
++      // The connection to the daemon is gone: the caller re-creates the device.
++      return -2;
++    }
++
++    // A stream that is merely idle (nothing is recording the virtual microphone yet) is
++    // healthy, so it drops frames instead of reporting a failure.
++    if (!device.connected.load(std::memory_order_acquire) || device.ring.push(samples, frame_count) == 0) {
++      // Dropping a frame keeps the host audio path real-time; the client's own jitter
++      // buffer absorbs the loss.
++      return 0;
++    }
++
++    pw_stream_trigger_process(device.stream);
++    return static_cast<int>(frame_count * sizeof(std::int16_t));
++  }
++}  // namespace platf::mic_redirect
+diff --git a/src/platform/linux/mic_redirect.h b/src/platform/linux/mic_redirect.h
+new file mode 100644
+index 00000000..2bcbe352
+--- /dev/null
++++ b/src/platform/linux/mic_redirect.h
+@@ -0,0 +1,45 @@
++/**
++ * @file src/platform/linux/mic_redirect.h
++ * @brief PipeWire virtual microphone that plays client microphone audio back to host apps.
++ */
++#pragma once
++
++#include <cstddef>
++#include <cstdint>
++
++namespace platf::mic_redirect {
++  /// Sample rate of the PCM accepted by write().
++  constexpr std::uint32_t sample_rate = 48000;
++
++  /**
++   * @brief Create the PipeWire microphone that host applications record from.
++   *
++   * Creates `sunshine-mic`, a virtual audio device carrying the frames handed to write(),
++   * and returns once the node exists. Safe to call when a device already exists.
++   *
++   * @return 0 on success, -1 when PipeWire is unavailable or the node could not be created.
++   */
++  int
++  init();
++
++  /**
++   * @brief Destroy the microphone created by init().
++   *
++   * Safe to call when no device was created.
++   */
++  void
++  release();
++
++  /**
++   * @brief Queue one mono 48 kHz signed 16-bit PCM frame for the microphone.
++   *
++   * Never blocks: when the graph is not consuming frames the frame is dropped instead.
++   *
++   * @param samples Pointer to the mono samples.
++   * @param frame_count Number of mono frames to write.
++   * @return Bytes queued, 0 when the frame was dropped for backpressure, -1 on error,
++   *         or -2 when the PipeWire connection became unavailable.
++   */
++  int
++  write(const std::int16_t *samples, std::size_t frame_count);
++}  // namespace platf::mic_redirect
+diff --git a/src/rtsp.cpp b/src/rtsp.cpp
+index c7135ddf..92144c3e 100644
+--- a/src/rtsp.cpp
++++ b/src/rtsp.cpp
+@@ -931,6 +931,11 @@ namespace rtsp_stream {
+     uint32_t encryption_flags_supported = SS_ENC_CONTROL_V2 | SS_ENC_AUDIO;
+     uint32_t encryption_flags_requested = SS_ENC_CONTROL_V2;
+ 
++    // Microphone encryption is only negotiated when microphone streaming is enabled
++    if (config::audio.stream_mic) {
++      encryption_flags_supported |= SS_ENC_MICROPHONE;
++    }
++
+     // Determine the encryption desired for this remote endpoint
+     auto encryption_mode = net::encryption_mode_for_address(sock.remote_endpoint().address());
+     if (encryption_mode != config::ENCRYPTION_MODE_NEVER) {
+@@ -940,7 +945,12 @@ namespace rtsp_stream {
+       // If it's mandatory, also request it to enable use if the client
+       // didn't explicitly opt in, but it otherwise has support.
+       if (encryption_mode == config::ENCRYPTION_MODE_MANDATORY) {
+-        encryption_flags_requested |= SS_ENC_VIDEO | SS_ENC_AUDIO;
++        encryption_flags_requested |= SS_ENC_VIDEO | SS_ENC_AUDIO | SS_ENC_MICROPHONE;
++      } else if (config::audio.stream_mic) {
++        // Ask for microphone encryption on its own: microphone audio is the only
++        // traffic the host plays back into a local device, so it must not depend on
++        // whether the client happens to encrypt game audio.
++        encryption_flags_requested |= SS_ENC_MICROPHONE;
+       }
+     }
+ 
+@@ -960,6 +970,16 @@ namespace rtsp_stream {
+       ss << "a=rtpmap:98 AV1/90000"sv << std::endl;
+     }
+ 
++    // Advertise the microphone stream so clients that read the session description
++    // know the host accepts one before they attempt SETUP.
++    if (config::audio.stream_mic) {
++      ss << "m=audio "sv << net::map_port(stream::MIC_STREAM_PORT) << " RTP/AVP 96" << std::endl;
++      ss << "a=rtpmap:96 opus/48000/2" << std::endl;
++      ss << "a=fmtp:96 minptime=20;useinbandfec=1" << std::endl;
++      ss << "a=ptime:20" << std::endl;
++      ss << "a=maxptime:20" << std::endl;
++    }
++
+     if (!session.surround_params.empty()) {
+       // If we have our own surround parameters, advertise them twice first
+       ss << "a=fmtp:97 surround-params="sv << session.surround_params << std::endl;
+@@ -1029,6 +1049,16 @@ namespace rtsp_stream {
+       port = net::map_port(stream::VIDEO_STREAM_PORT);
+     } else if (type == "control"sv) {
+       port = net::map_port(stream::CONTROL_PORT);
++    } else if (type == "mic"sv) {
++      port = net::map_port(stream::MIC_STREAM_PORT);
++      if (config::audio.stream_mic) {
++        session.enable_mic = true;
++        session.setup_mic = true;
++      } else {
++        // A client that does not read the session description still gets a port, but
++        // its microphone audio is never accepted.
++        BOOST_LOG(info) << "Ignoring microphone SETUP while microphone streaming is disabled"sv;
++      }
+     } else {
+       cmd_not_found(sock, session, std::move(req));
+ 
+diff --git a/src/rtsp.h b/src/rtsp.h
+index 8fa8dd6f..5c6a13c2 100644
+--- a/src/rtsp.h
++++ b/src/rtsp.h
+@@ -38,6 +38,8 @@ namespace rtsp_stream {
+     bool continuous_audio;  ///< Whether audio packets continue during silence.
+     bool enable_hdr;  ///< Whether HDR streaming is requested.
+     bool enable_sops;  ///< Whether sequence output protection is requested.
++    bool enable_mic {false};  ///< Whether the client completed microphone SETUP.
++    bool setup_mic {false};  ///< Whether microphone SETUP was requested and accepted.
+     std::string client_name;  ///< Friendly client name from initial pairing.
+ 
+     std::optional<crypto::cipher::gcm_t> rtsp_cipher;  ///< AES-GCM cipher used once encrypted RTSP is negotiated.
+diff --git a/src/stream.cpp b/src/stream.cpp
+index 1291c9c6..9a397ee3 100644
+--- a/src/stream.cpp
++++ b/src/stream.cpp
+@@ -7,9 +7,13 @@
+ #include <cstring>
+ #include <fstream>
+ #include <future>
++#include <mutex>
+ #include <optional>
+ #include <queue>
++#include <unordered_map>
++#include <unordered_set>
+ #include <utility>
++#include <vector>
+ 
+ // lib includes
+ #include <boost/endian/arithmetic.hpp>
+@@ -28,6 +32,7 @@ extern "C" {
+ #include "globals.h"
+ #include "input.h"
+ #include "logging.h"
++#include "mic_mixer.h"
+ #include "network.h"
+ #include "platform/common.h"
+ #include "process.h"
+@@ -315,6 +320,13 @@ namespace stream {
+     AUDIO_FEC_HEADER fecHeader;  ///< Audio forward-error-correction header.
+   };
+ 
++  /**
++   * @brief RTP-style header that prefixes a client microphone packet.
++   */
++  struct mic_packet_t {
++    RTP_PACKET rtp;  ///< Header carrying the packet type, sequence number, timestamp and SSRC.
++  };
++
+ #pragma pack(pop)
+ 
+   /**
+@@ -480,7 +492,60 @@ namespace stream {
+     udp::socket video_sock {io_context};  ///< UDP socket bound for video packet transmission.
+     udp::socket audio_sock {io_context};  ///< UDP socket bound for audio packet transmission.
+ 
++    std::jthread mic_thread;  ///< Thread that receives and mixes client microphone audio.
++
++    asio::io_context mic_io_context;  ///< Asio context used by the microphone receive socket.
++    udp::socket mic_sock {mic_io_context};  ///< UDP socket bound for microphone packet reception.
++
+     control_server_t control_server;  ///< ENet server for GameStream control packets.
++
++    std::mutex mic_socket_mutex;  ///< Guards the microphone socket lifecycle.
++    std::atomic<bool> mic_socket_enabled {false};  ///< Whether microphone datagrams are accepted.
++
++    /**
++     * @brief Per-session microphone decryption state.
++     */
++    struct mic_cipher_ctx_t {
++      crypto::cipher::cbc_t cipher;  ///< AES-CBC cipher keyed like the session's audio channel.
++
++      mic_cipher_ctx_t(const crypto::aes_t &key, bool padding):
++          cipher(key, padding) {
++      }
++
++      mic_cipher_ctx_t(mic_cipher_ctx_t &&) noexcept = default;
++      mic_cipher_ctx_t &operator=(mic_cipher_ctx_t &&) noexcept = default;
++    };
++
++    /**
++     * @brief Identity and routing state for one paired client's microphone.
++     */
++    struct mic_session_ctx_t {
++      std::uint32_t session_id;  ///< RTSP launch-session ID that owns this microphone.
++      std::uint32_t key_id;  ///< Base key ID of the session's microphone CBC IV.
++      boost::asio::ip::address client_address;  ///< Authenticated RTSP peer address.
++      std::optional<udp::endpoint> source_endpoint;  ///< Endpoint currently bound to this source.
++      std::optional<mic_cipher_ctx_t> cipher;  ///< Set when the session negotiated microphone encryption.
++
++      mic_session_ctx_t(
++        std::uint32_t session_id,
++        std::uint32_t key_id,
++        boost::asio::ip::address client_address,
++        std::optional<mic_cipher_ctx_t> cipher
++      ):
++          session_id {session_id},
++          key_id {key_id},
++          client_address {net::normalize_address(std::move(client_address))},
++          cipher {std::move(cipher)} {
++      }
++    };
++
++    /// Each session keeps its own decryption and Opus decoder state; the receive thread mixes
++    /// every active source into the single virtual microphone. The session ID is the primary
++    /// identity, while the address and UDP endpoint are only used for routing.
++    std::unordered_map<std::uint32_t, std::shared_ptr<mic_session_ctx_t>> mic_sessions;
++    std::mutex mic_session_mutex;  ///< Guards the session registration table.
++    std::atomic<std::uint32_t> mic_session_count {0};  ///< Number of registered microphone sources.
++    std::atomic<bool> mic_playout_reset_pending {false};  ///< Set when the last session left.
+   };
+ 
+   /**
+@@ -532,6 +597,9 @@ namespace stream {
+ 
+       audio_fec_packet_t fec_packet;  ///< Reusable packet header for audio forward-error-correction shards.
+       std::unique_ptr<platf::deinit_t> qos;  ///< Lifetime guard for audio-socket QoS configuration.
++
++      bool enable_mic {false};  ///< Whether the client completed microphone SETUP for this session.
++      bool mic_registered {false};  ///< Whether this session is registered with the microphone thread.
+     } audio;  ///< Audio capture configuration for the stream..
+ 
+     struct {
+@@ -623,6 +691,833 @@ namespace stream {
+    * @param ctx Native context object used by the operation or callback.
+    * @return 0 on success; nonzero when broadcast setup fails.
+    */
++  /**
++   * @brief Whether a receive error means the microphone socket is unusable.
++   *
++   * @param ec Error reported by the receive operation.
++   * @return True when the socket must be reopened before receiving again.
++   */
++  bool is_terminal_udp_receive_error(const boost::system::error_code &ec) noexcept {
++    return ec == boost::asio::error::operation_aborted ||
++           ec == boost::asio::error::bad_descriptor ||
++           ec == boost::system::errc::bad_file_descriptor ||
++           ec == boost::system::errc::not_a_socket;
++  }
++
++  /**
++   * @brief Whether a receive error can be retried on the same socket.
++   *
++   * @param ec Error reported by the receive operation.
++   * @return True when the error is expected during normal operation.
++   */
++  bool is_recoverable_udp_receive_error(const boost::system::error_code &ec) noexcept {
++    return ec == boost::system::errc::connection_refused ||
++           ec == boost::system::errc::connection_reset ||
++           ec == boost::asio::error::message_size;
++  }
++
++  /**
++   * @brief Open the microphone socket. The caller must hold the socket lock.
++   *
++   * @param ctx The shared broadcast context.
++   * @return True when the socket is open and accepts datagrams.
++   */
++  bool open_mic_socket_locked(broadcast_ctx_t &ctx) {
++    if (ctx.mic_sock.is_open()) {
++      ctx.mic_socket_enabled.store(true);
++      return true;
++    }
++
++    ctx.mic_socket_enabled.store(false);
++
++    auto address_family = net::get_effective_address_family(net::af_from_enum_string(config::sunshine.address_family));
++    auto protocol = address_family == net::IPV4 ? udp::v4() : udp::v6();
++    auto mic_port = net::map_port(MIC_STREAM_PORT);
++    boost::system::error_code ec;
++
++    const auto bind_address = boost::asio::ip::make_address(net::get_bind_address(address_family), ec);
++    if (ec) {
++      BOOST_LOG(error) << "Invalid microphone bind address: "sv << ec.message();
++      return false;
++    }
++
++    ctx.mic_sock.open(protocol, ec);
++    if (ec) {
++      BOOST_LOG(error) << "Couldn't open Microphone socket: "sv << ec.message();
++      return false;
++    }
++
++    ctx.mic_sock.bind(udp::endpoint(bind_address, mic_port), ec);
++    if (ec) {
++      BOOST_LOG(error) << "Couldn't bind Microphone socket to port ["sv << mic_port << "]: "sv << ec.message();
++      boost::system::error_code close_ec;
++      ctx.mic_sock.close(close_ec);
++      return false;
++    }
++
++    ctx.mic_socket_enabled.store(true);
++    BOOST_LOG(info) << "Microphone socket opened on "sv << bind_address << ':' << mic_port;
++    return true;
++  }
++
++  /**
++   * @brief Close the microphone socket. The caller must hold the socket lock.
++   *
++   * @param ctx The shared broadcast context.
++   */
++  void close_mic_socket_locked(broadcast_ctx_t &ctx) {
++    ctx.mic_socket_enabled.store(false);
++
++    if (!ctx.mic_sock.is_open()) {
++      return;
++    }
++
++    boost::system::error_code ec;
++    ctx.mic_sock.close(ec);
++    if (ec && ec != boost::asio::error::bad_descriptor) {
++      BOOST_LOG(warning) << "Couldn't close Microphone socket: "sv << ec.message();
++    }
++  }
++
++  /**
++   * @brief Cancel a pending microphone receive. The caller must hold the socket lock.
++   *
++   * @param ctx The shared broadcast context.
++   */
++  void cancel_mic_receive_locked(broadcast_ctx_t &ctx) {
++    if (!ctx.mic_sock.is_open()) {
++      return;
++    }
++
++    boost::system::error_code ec;
++    ctx.mic_sock.cancel(ec);
++    if (ec && ec != boost::asio::error::bad_descriptor) {
++      BOOST_LOG(warning) << "Couldn't cancel Microphone receive: "sv << ec.message();
++    }
++  }
++
++  /**
++   * @brief Drop every microphone session and close the socket during broadcast shutdown.
++   *
++   * @param ctx The shared broadcast context.
++   * @return True if an open socket was closed.
++   */
++  bool disable_mic_socket(broadcast_ctx_t &ctx) {
++    std::lock_guard<std::mutex> session_lock(ctx.mic_session_mutex);
++    ctx.mic_sessions.clear();
++    ctx.mic_session_count.store(0, std::memory_order_release);
++
++    std::lock_guard<std::mutex> socket_lock(ctx.mic_socket_mutex);
++    const auto was_open = ctx.mic_sock.is_open();
++    close_mic_socket_locked(ctx);
++    return was_open;
++  }
++
++  /**
++   * @brief Unregister the microphone source owned by an ending session.
++   *
++   * @param ctx The shared broadcast context.
++   * @param session_id The ID of the ending session.
++   * @return True if a source registration was removed.
++   */
++  bool release_mic_session(broadcast_ctx_t &ctx, std::uint32_t session_id) {
++    std::lock_guard<std::mutex> session_lock(ctx.mic_session_mutex);
++    if (ctx.mic_sessions.erase(session_id) == 0) {
++      return false;
++    }
++
++    const auto remaining_sessions = static_cast<std::uint32_t>(ctx.mic_sessions.size());
++    ctx.mic_session_count.store(remaining_sessions, std::memory_order_release);
++    if (remaining_sessions == 0) {
++      // Record the edge where the session count reached zero. Even when a new session
++      // registers before the cancel callback runs, the receive thread must start from a
++      // fresh absolute playout deadline.
++      ctx.mic_playout_reset_pending.store(true, std::memory_order_release);
++    }
++    if (remaining_sessions != 0) {
++      return true;
++    }
++
++    std::lock_guard<std::mutex> socket_lock(ctx.mic_socket_mutex);
++    cancel_mic_receive_locked(ctx);
++    return true;
++  }
++
++  /**
++   * @brief Register an independently decoded microphone source for a session.
++   *
++   * @param session The session that completed microphone SETUP.
++   * @param client_address The authenticated RTSP peer address.
++   */
++  void setup_mic_for_session(session_t &session, const boost::asio::ip::address &client_address) {
++    auto &ctx = *session.broadcast_ref.get();
++
++    const auto should_enable_mic_encryption = (session.config.encryptionFlagsEnabled & SS_ENC_MICROPHONE) != 0;
++    std::optional<broadcast_ctx_t::mic_cipher_ctx_t> cipher;
++    if (should_enable_mic_encryption) {
++      cipher.emplace(
++        session.audio.cipher.key,
++        session.audio.cipher.padding
++      );
++    }
++
++    auto registration = std::make_shared<broadcast_ctx_t::mic_session_ctx_t>(
++      session.launch_session_id,
++      session.audio.avRiKeyId,
++      client_address,
++      std::move(cipher)
++    );
++
++    {
++      // Keep one lock order for the session table and the socket lifetime, so the last old
++      // session exiting cannot close a socket a new session just opened.
++      std::lock_guard<std::mutex> session_lock(ctx.mic_session_mutex);
++      std::lock_guard<std::mutex> socket_lock(ctx.mic_socket_mutex);
++      if (!open_mic_socket_locked(ctx)) {
++        BOOST_LOG(error) << "Failed to open the microphone socket for session "sv << session.launch_session_id;
++        return;
++      }
++
++      session.audio.mic_registered = true;
++      ctx.mic_sessions[session.launch_session_id] = registration;
++      ctx.mic_session_count.store(
++        static_cast<std::uint32_t>(ctx.mic_sessions.size()),
++        std::memory_order_release);
++    }
++
++    BOOST_LOG(info) << "Session "sv << session.launch_session_id << ": microphone encryption "
++                    << (should_enable_mic_encryption ? "enabled"sv : "disabled"sv)
++                    << ", registered for multi-client mixing"sv;
++  }
++
++  /**
++   * @brief Remove a second padding layer left on a microphone payload by an over-padding client.
++   *
++   * Some clients ask their crypto backend for both block-size padding and the cipher finish
++   * step, which pads the payload twice. Decryption removes the outer layer, leaving up to one
++   * block of padding bytes that the Opus decoder would otherwise read as part of the last
++   * frame.
++   *
++   * A layer is only removed when it validates and is at least two bytes long. A single byte is
++   * what a correctly padded payload most plausibly ends with by chance (measured: no false
++   * positives across 12000 packets of tone, noise and mixed audio), while a one-byte residue
++   * from an over-padding client costs the decoder no more than one trailing byte.
++   *
++   * @note NOTICE: delete this shim, this function and its call site once no supported client
++   *       can double-pad. The check when bumping Sunshine is the client's moonlight-common-c:
++   *       in `src/MicrophoneStream.c`, sendMicrophoneOpusData() must not pass CIPHER_FLAG_FINISH
++   *       together with CIPHER_FLAG_PAD_TO_BLOCK_SIZE (PlatformCrypto.h forbids combining them,
++   *       and the OpenSSL backend pads twice when they are). See README.md in headless for the
++   *       carried patches and their removal conditions.
++   *
++   * @param payload Decrypted payload, truncated in place when an extra layer is present.
++   * @return True when a layer was removed.
++   */
++  bool strip_over_padding(std::vector<std::uint8_t> &payload) {
++    if (payload.empty()) {
++      return false;
++    }
++
++    const auto padding = payload.back();
++    if (padding < 2 || padding > 16 || padding > payload.size()) {
++      return false;
++    }
++
++    for (std::size_t i = 0; i < padding; ++i) {
++      if (payload[payload.size() - 1 - i] != padding) {
++        return false;
++      }
++    }
++
++    payload.resize(payload.size() - padding);
++    return true;
++  }
++
++  void
++  micRecvThread(broadcast_ctx_t &ctx) {
++    auto broadcast_shutdown_event = mail::man->event<bool>(mail::broadcast_shutdown);
++    auto &mic_io = ctx.mic_io_context;
++
++    udp::endpoint peer;
++    std::array<char, 2048> mic_recv_buffer;
++    bool mic_device_initialized = false;
++    audio::audio_ctx_ref_t mic_audio_ref;
++    mic_mixer::mixer_t mixer;
++    std::unordered_set<mic_mixer::source_id_t> mixer_sources;
++
++    struct MicStats {
++      uint64_t total_packets = 0;
++      uint64_t accepted_packets = 0;
++      uint64_t decode_failed = 0;
++      uint64_t invalid_data = 0;
++      uint64_t unregistered = 0;
++      uint64_t route_ambiguous = 0;
++      uint64_t backpressure_drops = 0;
++    };
++    MicStats stats;
++
++    auto log_mic_stats = [&](std::string_view reason) {
++      const auto mixer_stats = mixer.take_stats();
++      const auto has_diagnostics = stats.total_packets != 0 ||
++                                   stats.backpressure_drops != 0 ||
++                                   mixer_stats.duplicate_packets != 0 ||
++                                   mixer_stats.late_packets != 0 ||
++                                   mixer_stats.buffer_overflow_packets != 0 ||
++                                   mixer_stats.timeline_reanchors != 0 ||
++                                   mixer_stats.plc_frames != 0 ||
++                                   mixer_stats.decode_failures != 0 ||
++                                   mixer_stats.skipped_playout_frames != 0;
++      if (!has_diagnostics) {
++        stats = {};
++        return;
++      }
++
++      BOOST_LOG(info) << "Microphone diagnostics ("sv << reason
++                      << "): packets="sv << stats.total_packets
++                      << ", accepted="sv << stats.accepted_packets
++                      << ", route_decode_failed="sv << stats.decode_failed
++                      << ", invalid="sv << stats.invalid_data
++                      << ", unregistered="sv << stats.unregistered
++                      << ", route_ambiguous="sv << stats.route_ambiguous
++                      << ", duplicate="sv << mixer_stats.duplicate_packets
++                      << ", late="sv << mixer_stats.late_packets
++                      << ", queue_overflow="sv << mixer_stats.buffer_overflow_packets
++                      << ", reanchors="sv << mixer_stats.timeline_reanchors
++                      << ", plc="sv << mixer_stats.plc_frames
++                      << ", opus_decode_failed="sv << mixer_stats.decode_failures
++                      << ", skipped_slots="sv << mixer_stats.skipped_playout_frames
++                      << ", backpressure_drops="sv << stats.backpressure_drops;
++      stats = {};
++    };
++
++    auto release_mic_device = [&]() {
++      if (mic_device_initialized) {
++        audio::release_mic_redirect_device();
++        BOOST_LOG(debug) << "Microphone redirect session released"sv;
++      }
++      mic_device_initialized = false;
++      mic_audio_ref = {};
++      mixer.clear();
++      mixer_sources.clear();
++    };
++
++    auto decode_candidate_payload = [](const std::shared_ptr<broadcast_ctx_t::mic_session_ctx_t> &mic_session,
++                                      const std::uint8_t *audio_data,
++                                      std::size_t data_size,
++                                      std::uint16_t sequence_number,
++                                      std::vector<std::uint8_t> &decoded_payload) -> bool {
++      decoded_payload.clear();
++      if (!mic_session->cipher) {
++        if (!mic_mixer::is_valid_opus_packet(audio_data, data_size)) {
++          return false;
++        }
++        decoded_payload.assign(audio_data, audio_data + data_size);
++        return true;
++      }
++
++      auto &cipher_ctx = *mic_session->cipher;
++      // The microphone CBC IV carries the session key ID plus the 16-bit packet sequence number
++      crypto::aes_t current_iv(16);
++      const auto iv_sequence = mic_session->key_id + sequence_number;
++      const auto iv_sequence_be = util::endian::big<std::uint32_t>(iv_sequence);
++      std::memcpy(current_iv.data(), &iv_sequence_be, sizeof(iv_sequence_be));
++      std::memset(current_iv.data() + sizeof(iv_sequence_be), 0, current_iv.size() - sizeof(iv_sequence_be));
++
++      const std::string_view ciphertext {
++        reinterpret_cast<const char *>(audio_data),
++        data_size,
++      };
++      if (cipher_ctx.cipher.decrypt(ciphertext, decoded_payload, &current_iv) != 0) {
++        return false;
++      }
++
++      if (strip_over_padding(decoded_payload)) {
++        static std::once_flag warned;
++        std::call_once(warned, [] {
++          BOOST_LOG(warning) << "Client microphone payloads carry an extra padding block; "
++                                "stripping it, consider updating the client"sv;
++        });
++      }
++
++      return mic_mixer::is_valid_opus_packet(decoded_payload.data(), decoded_payload.size());
++    };
++
++    auto process_audio_data = [&](const std::uint8_t *audio_data,
++                                  std::size_t data_size,
++                                  std::uint16_t sequence_number,
++                                  std::optional<std::uint32_t> timestamp_ms,
++                                  std::uint32_t source_key_id,
++                                  const udp::endpoint &source_endpoint) {
++      if (!ctx.mic_socket_enabled.load()) {
++        return;
++      }
++
++      ++stats.total_packets;
++
++      const auto source_address = net::normalize_address(source_endpoint.address());
++      std::vector<std::shared_ptr<broadcast_ctx_t::mic_session_ctx_t>> candidates;
++      {
++        std::lock_guard<std::mutex> lock(ctx.mic_session_mutex);
++        for (const auto &[session_id, session] : ctx.mic_sessions) {
++          (void) session_id;
++          if (session->client_address == source_address) {
++            candidates.emplace_back(session);
++          }
++        }
++      }
++
++      if (candidates.empty()) {
++        ++stats.unregistered;
++        return;
++      }
++
++      std::sort(candidates.begin(), candidates.end(), [](const auto &left, const auto &right) {
++        return left->session_id < right->session_id;
++      });
++
++      // Current clients use a fixed SSRC on the wire, so endpoint and key-trial routing stay the
++      // compatibility path; a client that puts the session key ID in the SSRC needs no trial.
++      std::vector<std::shared_ptr<broadcast_ctx_t::mic_session_ctx_t>> ordered_candidates;
++      ordered_candidates.reserve(candidates.size());
++      auto append_candidates = [&](const auto &predicate) {
++        for (const auto &candidate : candidates) {
++          if (predicate(*candidate) &&
++              std::find(ordered_candidates.begin(), ordered_candidates.end(), candidate) == ordered_candidates.end()) {
++            ordered_candidates.emplace_back(candidate);
++          }
++        }
++      };
++
++      append_candidates([&](const auto &candidate) {
++        return candidate.source_endpoint == source_endpoint;
++      });
++      if (source_key_id != MIC_PACKET_MAGIC) {
++        append_candidates([&](const auto &candidate) {
++          return candidate.key_id == source_key_id;
++        });
++      }
++      if (candidates.size() == 1) {
++        append_candidates([](const auto &) {
++          return true;
++        });
++      }
++      append_candidates([](const auto &candidate) {
++        return !candidate.source_endpoint && candidate.cipher.has_value();
++      });
++      append_candidates([](const auto &candidate) {
++        return !candidate.source_endpoint;
++      });
++      // An encrypted payload can be relocated by key after the source port changes. Plaintext
++      // carries no identity, so a multi-session host must not rebind another endpoint's source.
++      append_candidates([](const auto &candidate) {
++        return candidate.cipher.has_value();
++      });
++
++      std::shared_ptr<broadcast_ctx_t::mic_session_ctx_t> mic_session;
++      std::vector<std::uint8_t> decoded_payload;
++      for (const auto &candidate : ordered_candidates) {
++        if (decode_candidate_payload(candidate, audio_data, data_size, sequence_number, decoded_payload)) {
++          mic_session = candidate;
++          break;
++        }
++      }
++
++      if (!mic_session) {
++        if (ordered_candidates.empty()) {
++          ++stats.route_ambiguous;
++        }
++        else {
++          ++stats.decode_failed;
++        }
++        return;
++      }
++
++      if (!mic_device_initialized) {
++        return;
++      }
++
++      if (!mixer.add_source(mic_session->session_id)) {
++        ++stats.invalid_data;
++        return;
++      }
++      mixer_sources.insert(mic_session->session_id);
++      if (!mixer.push_packet(
++            mic_session->session_id,
++            decoded_payload.data(),
++            decoded_payload.size(),
++            sequence_number,
++            timestamp_ms)) {
++        ++stats.invalid_data;
++        return;
++      }
++
++      std::vector<std::uint32_t> displaced_sources;
++      {
++        std::lock_guard<std::mutex> lock(ctx.mic_session_mutex);
++        const auto registered = ctx.mic_sessions.find(mic_session->session_id);
++        if (registered == ctx.mic_sessions.end() || registered->second != mic_session) {
++          ++stats.unregistered;
++          return;
++        }
++
++        // One UDP endpoint belongs to exactly one authenticated source at a time. Rebinding clears
++        // stale mappings, so same-address sessions leave no duplicate endpoints behind.
++        for (auto &[session_id, registered_session] : ctx.mic_sessions) {
++          (void) session_id;
++          if (registered_session != mic_session && registered_session->source_endpoint == source_endpoint) {
++            registered_session->source_endpoint.reset();
++            displaced_sources.emplace_back(registered_session->session_id);
++          }
++        }
++        mic_session->source_endpoint = source_endpoint;
++      }
++
++      for (const auto displaced_source : displaced_sources) {
++        mixer.remove_source(displaced_source);
++        mixer_sources.erase(displaced_source);
++      }
++
++      ++stats.accepted_packets;
++    };
++
++    auto retry_delay = 300ms;  // Initial retry delay; consecutive errors back off to 5 seconds.
++    std::function<void(const boost::system::error_code, size_t)> mic_recv_func;
++    std::function<void()> schedule_mix;
++    bool retry_receive_after_error = false;
++    bool reset_mic_io_cycle = false;
++    bool reopen_mic_socket_after_error = false;
++    bool mix_timer_armed = false;
++    std::uint64_t mix_timer_generation = 0;
++    using mix_clock_t = asio::steady_timer::clock_type;
++    std::optional<mix_clock_t::time_point> next_mix_deadline;
++    asio::steady_timer mix_timer {mic_io};
++    auto cancel_mix_timer = [&]() {
++      mix_timer_armed = false;
++      ++mix_timer_generation;
++      next_mix_deadline.reset();
++      try {
++        mix_timer.cancel();
++      }
++      catch (const std::exception &e) {
++        BOOST_LOG(error) << "Failed to cancel microphone mix timer: "sv << e.what();
++      }
++    };
++    auto reset_playout_clock_if_pending = [&]() {
++      if (ctx.mic_playout_reset_pending.load(std::memory_order_acquire) &&
++          ctx.mic_playout_reset_pending.exchange(false, std::memory_order_acq_rel)) {
++        cancel_mix_timer();
++      }
++    };
++    auto schedule_receive = [&]() -> bool {
++      std::lock_guard<std::mutex> lock(ctx.mic_socket_mutex);
++      if (broadcast_shutdown_event->peek() ||
++          !ctx.mic_socket_enabled.load() ||
++          !ctx.mic_sock.is_open() ||
++          !mic_device_initialized ||
++          ctx.mic_session_count.load(std::memory_order_acquire) == 0) {
++        return false;
++      }
++
++      try {
++        ctx.mic_sock.async_receive_from(asio::buffer(mic_recv_buffer), peer, 0, mic_recv_func);
++        return true;
++      }
++      catch (const std::exception &e) {
++        BOOST_LOG(error) << "Failed to restart microphone receive: "sv << e.what();
++        return false;
++      }
++    };
++    auto retry_with_reopened_mic_socket = [&]() {
++      retry_receive_after_error = true;
++      mixer.clear();
++      mixer_sources.clear();
++      reopen_mic_socket_after_error = true;
++      cancel_mix_timer();
++    };
++
++    mic_recv_func = [&](const boost::system::error_code &ec, size_t received_bytes) {
++      if (!ctx.mic_socket_enabled.load()) {
++        return;
++      }
++
++      if (is_terminal_udp_receive_error(ec)) {
++        BOOST_LOG(debug) << "Microphone receive stopped: "sv << ec.message();
++        // The last session leaving cancels the pending receive. A new session may register before
++        // that callback runs, so receive and mixing must restart in the same turn, not stay idle.
++        if (!broadcast_shutdown_event->peek() &&
++            ctx.mic_socket_enabled.load() &&
++            ctx.mic_session_count.load(std::memory_order_acquire) != 0 &&
++            mic_device_initialized) {
++          if (schedule_receive()) {
++            schedule_mix();
++          }
++          else {
++            if (!broadcast_shutdown_event->peek() &&
++                ctx.mic_socket_enabled.load() &&
++                ctx.mic_session_count.load(std::memory_order_acquire) != 0 &&
++                mic_device_initialized) {
++              retry_with_reopened_mic_socket();
++            }
++            else {
++              reset_mic_io_cycle = true;
++              cancel_mix_timer();
++            }
++          }
++        }
++        else {
++          // With no active session the old mixing chain is terminated as well, so the io_context
++          // returns to the outer loop. cancel() cannot withdraw a queued success callback, so the
++          reset_mic_io_cycle = true;
++          cancel_mix_timer();
++        }
++        return;
++      }
++
++      // Handle the packet, or keep receiving after a recoverable error.
++      auto fg = util::fail_guard([&]() {
++        if (schedule_receive()) {
++          // A new session can join after the old mixing callback exited on a zero session count,
++          // so restarting receive also keeps the mixing timer running.
++          schedule_mix();
++        }
++      });
++
++      if (ec) {
++        if (is_recoverable_udp_receive_error(ec)) {
++          BOOST_LOG(debug) << "Mic socket recoverable receive error: "sv << ec.message();
++        }
++        else {
++          BOOST_LOG(error) << "Mic socket error: "sv << ec.message();
++          fg.disable();
++          // An unclassified socket error goes to the backoff retry. The old playout slots are no
++          // longer timely, so only the mixer state is cleared; a network error does not rebuild it.
++          retry_with_reopened_mic_socket();
++        }
++        return;
++      }
++
++      retry_receive_after_error = false;
++      retry_delay = 300ms;
++
++      if (received_bytes < sizeof(RTP_PACKET)) {
++        return;
++      }
++
++      // 8-bit packet type.
++      auto *header = (mic_packet_t *) mic_recv_buffer.data();
++      if (header->rtp.packetType == MIC_PACKET_TYPE_OPUS) {
++        size_t header_size = sizeof(mic_packet_t);
++        if (received_bytes > header_size) {
++          // The client sends the sequence number little-endian (MicrophoneStream.java uses
++          // LITTLE_ENDIAN), so the host must read it the same way or 1 arrives as 256.
++          uint16_t sequence_number = util::endian::little(header->rtp.sequenceNumber);
++          const auto timestamp_ms = util::endian::little(header->rtp.timestamp);
++          const auto source_key_id = util::endian::little(header->rtp.ssrc);
++          size_t data_size = received_bytes - header_size;
++          
++          // BOOST_LOG(verbose) << "Received MIC packet: total=" << received_bytes 
++          //                 << " bytes, header=" << header_size 
++          //                 << " bytes, data=" << data_size 
++          //                 << " bytes, sequenceNumber=" << sequence_number << " (little-endian)"
++          //                 << " from " << client_ip;
++          process_audio_data(
++            reinterpret_cast<const uint8_t *>(mic_recv_buffer.data()) + header_size,
++            data_size,
++            sequence_number,
++            timestamp_ms,
++            source_key_id,
++            peer);
++        }
++      }
++    };
++
++    schedule_mix = [&]() {
++      reset_playout_clock_if_pending();
++      if (ctx.mic_session_count.load(std::memory_order_acquire) == 0) {
++        return;
++      }
++      if (mix_timer_armed) {
++        return;
++      }
++
++      mix_timer_armed = true;
++      const auto generation = ++mix_timer_generation;
++      if (!next_mix_deadline) {
++        next_mix_deadline = mix_clock_t::now() + 20ms;
++      }
++      mix_timer.expires_at(*next_mix_deadline);
++      mix_timer.async_wait([&, generation](const boost::system::error_code &ec) {
++        if (generation != mix_timer_generation) {
++          return;
++        }
++        reset_playout_clock_if_pending();
++        if (generation != mix_timer_generation) {
++          return;
++        }
++        mix_timer_armed = false;
++
++        if (ec == boost::asio::error::operation_aborted ||
++            broadcast_shutdown_event->peek() ||
++            retry_receive_after_error ||
++            reset_mic_io_cycle ||
++            ctx.mic_session_count.load(std::memory_order_acquire) == 0) {
++          return;
++        }
++
++        const auto now = mix_clock_t::now();
++        if (now >= *next_mix_deadline + 20ms) {
++          const auto missed_frames = static_cast<std::size_t>((now - *next_mix_deadline) / 20ms);
++          mixer.skip_playout_frames(missed_frames);
++          *next_mix_deadline += 20ms * missed_frames;
++        }
++
++        std::unordered_set<mic_mixer::source_id_t> registered_sources;
++        {
++          std::lock_guard<std::mutex> lock(ctx.mic_session_mutex);
++          for (const auto &[session_id, session] : ctx.mic_sessions) {
++            (void) session;
++            registered_sources.insert(session_id);
++          }
++        }
++
++        for (auto source_it = mixer_sources.begin(); source_it != mixer_sources.end();) {
++          if (!registered_sources.contains(*source_it)) {
++            mixer.remove_source(*source_it);
++            source_it = mixer_sources.erase(source_it);
++          }
++          else {
++            ++source_it;
++          }
++        }
++
++        if (auto mixed = mixer.mix_next_frame()) {
++          const auto write_result = audio::write_mic_pcm(mixed->data(), mixed->size());
++          if (write_result == 0) {
++            ++stats.backpressure_drops;
++          }
++          if (write_result < 0) {
++            if (write_result == -2) {
++              BOOST_LOG(info) << "Microphone output backend became unavailable; reinitializing"sv;
++            }
++            else {
++              BOOST_LOG(warning) << "Microphone output write failed; reinitializing"sv;
++            }
++            release_mic_device();
++            retry_receive_after_error = true;
++            reset_mic_io_cycle = true;
++            cancel_mix_timer();
++
++            std::lock_guard<std::mutex> lock(ctx.mic_socket_mutex);
++            cancel_mic_receive_locked(ctx);
++            return;
++          }
++        }
++
++        *next_mix_deadline += 20ms;
++        schedule_mix();
++      });
++    };
++
++    BOOST_LOG(debug) << "Starting microphone receive thread";
++
++    bool had_active_mic_sessions = false;
++
++    while (!broadcast_shutdown_event->peek()) {
++      if (ctx.mic_session_count.load(std::memory_order_acquire) == 0) {
++        retry_delay = 300ms;  // Reset the delay once the sessions end.
++        reset_playout_clock_if_pending();
++        release_mic_device();
++        if (had_active_mic_sessions) {
++          log_mic_stats("sessions ended"sv);
++          had_active_mic_sessions = false;
++        }
++        (void) broadcast_shutdown_event->view(100ms);
++        continue;
++      }
++      had_active_mic_sessions = true;
++
++      if (reopen_mic_socket_after_error || !ctx.mic_socket_enabled.load()) {
++        bool has_active_sessions = false;
++        bool socket_ready = false;
++        {
++          // Reuse the registration/removal lock order and re-confirm under the session lock that
++          std::lock_guard<std::mutex> session_lock(ctx.mic_session_mutex);
++          has_active_sessions = !ctx.mic_sessions.empty();
++          if (has_active_sessions) {
++            std::lock_guard<std::mutex> socket_lock(ctx.mic_socket_mutex);
++            if (reopen_mic_socket_after_error) {
++              close_mic_socket_locked(ctx);
++            }
++            socket_ready = open_mic_socket_locked(ctx);
++          }
++        }
++        if (!has_active_sessions) {
++          continue;
++        }
++        if (!socket_ready) {
++          (void) broadcast_shutdown_event->view(retry_delay);
++          retry_delay = std::min(retry_delay * 2, 5000ms);
++          continue;
++        }
++        reopen_mic_socket_after_error = false;
++      }
++
++      if (!mic_device_initialized) {
++        // The audio context is held for the whole lifetime of the microphone device, so the
++        // device can be restored even when capture has exited. A client microphone works
++        // while host audio streaming is off, so an active microphone session creates and
++        // holds its own audio control context.
++        mic_audio_ref = audio::get_audio_ctx_ref();
++        if (!mic_audio_ref) {
++          (void) broadcast_shutdown_event->view(retry_delay);
++          retry_delay = std::min(retry_delay * 2, 5000ms);
++          continue;
++        }
++
++        if (audio::init_mic_redirect_device() != 0) {
++          mic_audio_ref = {};
++          (void) broadcast_shutdown_event->view(retry_delay);
++          retry_delay = std::min(retry_delay * 2, 5000ms);  // Back off, capped at 5 seconds.
++          continue;
++        }
++
++        if (!ctx.mic_socket_enabled.load() ||
++            ctx.mic_session_count.load(std::memory_order_acquire) == 0) {
++          audio::release_mic_redirect_device();
++          mic_audio_ref = {};
++          continue;
++        }
++
++        mic_device_initialized = true;
++        retry_delay = 300ms;
++      }
++
++      if (mic_io.stopped()) {
++        mic_io.restart();
++      }
++      retry_receive_after_error = false;
++      reset_mic_io_cycle = false;
++      if (!schedule_receive()) {
++        if (ctx.mic_socket_enabled.load() && !broadcast_shutdown_event->peek()) {
++          (void) broadcast_shutdown_event->view(100ms);
++        }
++        continue;
++      }
++      schedule_mix();
++
++      mic_io.run();
++      if (retry_receive_after_error &&
++          ctx.mic_socket_enabled.load() &&
++          !broadcast_shutdown_event->peek()) {
++        (void) broadcast_shutdown_event->view(retry_delay);
++        retry_delay = std::min(retry_delay * 2, 5000ms);
++      }
++    }
++
++    release_mic_device();
++    log_mic_stats("shutdown"sv);
++  }
++
+   int start_broadcast(broadcast_ctx_t &ctx);
+   /**
+    * @brief Stop broadcast processing.
+@@ -2018,6 +2913,7 @@ namespace stream {
+     ctx.control_thread = std::jthread {controlBroadcastThread, &ctx.control_server};
+ 
+     ctx.recv_thread = std::jthread {recvThread, std::ref(ctx)};
++    ctx.mic_thread = std::jthread {micRecvThread, std::ref(ctx)};
+ 
+     return 0;
+   }
+@@ -2039,10 +2935,15 @@ namespace stream {
+ 
+     ctx.message_queue_queue->stop();
+     ctx.io_context.stop();
++    ctx.mic_io_context.stop();
+ 
+     ctx.video_sock.close();
+     ctx.audio_sock.close();
+ 
++    if (disable_mic_socket(ctx)) {
++      BOOST_LOG(debug) << "Microphone socket closed and session keys cleared"sv;
++    }
++
+     video_packets.reset();
+     audio_packets.reset();
+ 
+@@ -2054,6 +2955,8 @@ namespace stream {
+     ctx.audio_thread.join();
+     BOOST_LOG(debug) << "Waiting for main control thread to end..."sv;
+     ctx.control_thread.join();
++    BOOST_LOG(debug) << "Waiting for microphone thread to end..."sv;
++    ctx.mic_thread.join();
+     BOOST_LOG(debug) << "All broadcasting threads ended"sv;
+ 
+     broadcast_shutdown_event->reset();
+@@ -2230,6 +3133,14 @@ namespace stream {
+       session.videoThread.join();
+       BOOST_LOG(debug) << "Waiting for audio to end..."sv;
+       session.audioThread.join();
++
++      if (session.audio.mic_registered) {
++        const auto was_registered = release_mic_session(*session.broadcast_ref.get(), session.launch_session_id);
++        session.audio.mic_registered = false;
++        BOOST_LOG(debug) << "Microphone registration for session "sv << session.launch_session_id
++                         << (was_registered ? " released"sv : " was already absent"sv);
++      }
++
+       BOOST_LOG(debug) << "Waiting for control to end..."sv;
+       session.controlEnd.view();
+       // Reset input on session stop to avoid stuck repeated keys
+@@ -2291,6 +3202,12 @@ namespace stream {
+       session.audioThread = std::jthread {audioThread, &session};
+       session.videoThread = std::jthread {videoThread, &session};
+ 
++      // Complete microphone registration while the session is still starting, so stop()
++      // cannot release the routing and key state before they are paired.
++      if (session.audio.enable_mic) {
++        setup_mic_for_session(session, addr);
++      }
++
+       session.state.store(state_e::RUNNING, std::memory_order_relaxed);
+ 
+       // If this is the first session, invoke the platform callbacks
+@@ -2372,6 +3289,7 @@ namespace stream {
+       session->audio.avRiKeyId = util::endian::big(*(std::uint32_t *) launch_session.iv.data());
+       session->audio.sequenceNumber = 0;
+       session->audio.timestamp = 0;
++      session->audio.enable_mic = launch_session.enable_mic;
+ 
+       session->control.peer = nullptr;
+       session->state.store(state_e::STOPPED, std::memory_order_relaxed);
+diff --git a/src/stream.h b/src/stream.h
+index c0b0f962..c2b4a111 100644
+--- a/src/stream.h
++++ b/src/stream.h
+@@ -19,6 +19,7 @@ namespace stream {
+   constexpr auto VIDEO_STREAM_PORT = 9;  ///< GameStream base-port offset used for the video UDP stream.
+   constexpr auto CONTROL_PORT = 10;  ///< GameStream base-port offset used for the control channel.
+   constexpr auto AUDIO_STREAM_PORT = 11;  ///< GameStream base-port offset used for the audio UDP stream.
++  constexpr auto MIC_STREAM_PORT = 12;  ///< GameStream base-port offset used for the microphone stream.
+ 
+   struct session_t;
+ 

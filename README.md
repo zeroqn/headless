@@ -4,7 +4,9 @@ This repository builds and publishes prebuilt Nix package outputs for:
 
 - The `headless` branch of [`zeroqn/niri`](https://github.com/zeroqn/niri/tree/headless).
 - Rio commit [`d656326`](https://github.com/raphamorim/rio/commit/d656326020ffe5959e221af7a7d1d8d82a6ab2db).
-- Standard and CUDA-enabled Sunshine from the pinned source in `sunshine/source-package.nix`.
+- Standard and CUDA-enabled Sunshine from the pinned source in `sunshine/source-package.nix`, carrying two local patches for the client microphone:
+  - `sunshine/sunshine-mic-common.patch` — microphone stream constants for `third-party/moonlight-common-c` (`SS_ENC_MICROPHONE`, `MIC_PACKET_*`). **Drop it** once the pinned submodule defines those constants itself.
+  - `sunshine/sunshine-mic.patch` — the microphone RTSP stream, per-client Opus decode and mixing, and the PipeWire virtual microphone (`sunshine-mic`). It also carries `strip_over_padding()` in `src/stream.cpp`: a shim that removes a second padding layer from microphone payloads, because OpenSSL builds of the forked `moonlight-common-c` pad twice (`src/MicrophoneStream.c`, `sendMicrophoneOpusData()` passes `CIPHER_FLAG_FINISH` together with `CIPHER_FLAG_PAD_TO_BLOCK_SIZE`, a combination `PlatformCrypto.h` forbids; the PSA backend pads only once). **Remove the shim, its function and its call site** once moonlight-harmony's pinned `nativelib/src/main/cpp/moonlight-common-c` no longer combines those flags and the released client has shipped.
 - Moonlight Qt commit [`8369d1a`](https://github.com/moonlight-stream/moonlight-qt/commit/8369d1a0e11b999d4d1598f62ca5f6dea49602fb).
 - Waypipe commit [`6cccb84b`](https://gitlab.freedesktop.org/mstoeckl/waypipe/-/commit/6cccb84b74f2e9e5e88a77d004a58c7a87f5b97e) with a 128M vsock socket buffer patch (`patches/waypipe-vsock-buffer-128m.patch`).
 - mimalloc `3.5.3` ([microsoft/mimalloc](https://github.com/microsoft/mimalloc/releases/tag/v3.5.3)) in three `MI_SECURE` builds — `OFF` (`mimalloc`), `ON` (`mimalloc-secure`) and `FULL` (`mimalloc-secure-full`) — newer than the `3.3.2` shipped by nixpkgs.

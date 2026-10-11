@@ -1,0 +1,16 @@
+diff --git a/third-party/moonlight-common-c/src/Limelight-internal.h b/third-party/moonlight-common-c/src/Limelight-internal.h
+--- a/third-party/moonlight-common-c/src/Limelight-internal.h
++++ b/third-party/moonlight-common-c/src/Limelight-internal.h
+@@ -48,6 +48,12 @@
+ #define SS_ENC_CONTROL_V2 0x01
+ #define SS_ENC_VIDEO 0x02
+ #define SS_ENC_AUDIO 0x04
++#define SS_ENC_MICROPHONE 0x08
++
++// Microphone stream values
++#define MIC_PACKET_MAGIC 0x12345678
++#define MIC_PACKET_TYPE_OPUS 0x61
++#define MAX_MIC_PACKET_SIZE 1400
+ 
+ extern uint32_t EncryptionFeaturesSupported;
+ extern uint32_t EncryptionFeaturesRequested;
