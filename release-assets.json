@@ -34,7 +34,7 @@
         "x86_64-linux": {
           "name": "sunshine-main-x86_64-linux.tar.gz",
           "url": "https://github.com/zeroqn/headless/releases/download/main-build/sunshine-main-x86_64-linux.tar.gz",
-          "hash": "sha256-RqV5NwtKAe6EqisYGG31FjduVtAzvX8kzI0+8JzWilY="
+          "hash": "sha256-UBxVr+autUR4xP7t1gt+aneSi0qmrtM3honhpt55Ln4="
         }
       }
     },
@@ -45,7 +45,7 @@
         "x86_64-linux": {
           "name": "sunshine-main-cuda-x86_64-linux.tar.gz",
           "url": "https://github.com/zeroqn/headless/releases/download/main-build/sunshine-main-cuda-x86_64-linux.tar.gz",
-          "hash": "sha256-gKVgob9qsx5hchiLqcwF+SjtGY6QNt9dY4aXu3buFAk="
+          "hash": "sha256-wpQxkaYX4BpBeb4OJbsCUGEH5vFqWdazP6FDujS/Jyk="
         }
       }
     },
@@ -56,7 +56,7 @@
         "x86_64-linux": {
           "name": "moonlight-qt-main-x86_64-linux.tar.gz",
           "url": "https://github.com/zeroqn/headless/releases/download/main-build/moonlight-qt-main-x86_64-linux.tar.gz",
-          "hash": "sha256-5nzt9lIDmGu7sapwHOJ8p0+ceye9zdtBGBzg66DlM30="
+          "hash": "sha256-zga89ykn5HZvFqr/U/S8rkzgGyTTwS5Izt8TuC/tjKY="
         }
       }
     },
@@ -78,7 +78,7 @@
         "x86_64-linux": {
           "name": "mimalloc-3.5.3-x86_64-linux.tar.gz",
           "url": "https://github.com/zeroqn/headless/releases/download/main-build/mimalloc-3.5.3-x86_64-linux.tar.gz",
-          "hash": "sha256-0JPzQ6dNreW9M1MKt62Rpaoh0igHHobOA5WIt5gB50o="
+          "hash": "sha256-ibr7etW2G/u/NJG2tuy0lBXFTykqYGvkYMA7gmPuTRM="
         }
       }
     },
@@ -89,7 +89,7 @@
         "x86_64-linux": {
           "name": "mimalloc-secure-3.5.3-x86_64-linux.tar.gz",
           "url": "https://github.com/zeroqn/headless/releases/download/main-build/mimalloc-secure-3.5.3-x86_64-linux.tar.gz",
-          "hash": "sha256-YAT1SJG4iOhIYi9CIr6J2rCsXy4Jz3Xq5YogDReXn5o="
+          "hash": "sha256-n55acGZ5H/vmzfhdzQrS4wv5SeKnpyoTleHybhfglR4="
         }
       }
     },
@@ -100,7 +100,7 @@
         "x86_64-linux": {
           "name": "mimalloc-secure-full-3.5.3-x86_64-linux.tar.gz",
           "url": "https://github.com/zeroqn/headless/releases/download/main-build/mimalloc-secure-full-3.5.3-x86_64-linux.tar.gz",
-          "hash": "sha256-odv8yUJlTdf7ZVe4Dxmr7SthRUdVDSTVobL1F/l9m4U="
+          "hash": "sha256-zwntSiK1J4IK/awPvnYUIr8Jn72816gZilH8SOB+EbE="
         }
       }
     },
