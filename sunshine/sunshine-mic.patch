@@ -57,9 +57,9 @@ index e04b05ba..0aa832ea 100644
 +            microphone as a normal input device.
 +            @note{On FreeBSD/Linux the virtual microphone is a PipeWire node named
 +            @code{}sunshine-mic@endcode{}. It is created on demand when the first client completes
-+            microphone setup, and requires a running PipeWire daemon. Applications select it as
-+            @code{}sunshine-mic.monitor@endcode{} in the device list, or as the monitor device of
-+            @code{}Sunshine Microphone@endcode{}.}
++            microphone setup, and removed when the last one leaves. It requires a running PipeWire
++            daemon, and appears in application device lists as @code{}Sunshine Microphone@endcode{}
++            (@code{}sunshine-mic@endcode{}).}
 +        </td>
 +    </tr>
 +    <tr>
@@ -896,7 +896,7 @@ new file mode 100644
 index 00000000..9458ac54
 --- /dev/null
 +++ b/src/platform/linux/mic_redirect.cpp
-@@ -0,0 +1,550 @@
+@@ -0,0 +1,549 @@
 +/**
 + * @file src/platform/linux/mic_redirect.cpp
 + * @brief PipeWire virtual microphone fed by client microphone audio.
@@ -963,7 +963,7 @@ index 00000000..9458ac54
 +     * pads with silence, so a producer never blocks on a stalled graph.
 +     */
 +    struct ring_t {
-+      std::vector<std::int16_t> data {ring_frames};  ///< Backing storage.
++      std::vector<std::int16_t> data = std::vector<std::int16_t>(ring_frames, 0);  ///< Backing storage.
 +      std::atomic<std::size_t> head {0};  ///< Next write index, monotonically increasing.
 +      std::atomic<std::size_t> tail {0};  ///< Next read index, monotonically increasing.
 +
@@ -1287,7 +1287,6 @@ index 00000000..9458ac54
 +      // buffer far larger than the microphone frame, which would drop most of the audio.
 +      PW_KEY_NODE_RATE, "1/48000",
 +      PW_KEY_NODE_FORCE_QUANTUM, "960",
-+      PW_KEY_OBJECT_LINGER, "true",
 +      nullptr);
 +
 +    device.source_node = static_cast<pw_proxy *>(

@@ -1,0 +1,4 @@
+# Build artifacts from this folder
+/result
+/virgl-probe
+/virgl-probe-bin
