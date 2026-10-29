@@ -39,6 +39,7 @@ sunshine.overrideAttrs (old: {
   patches = (old.patches or [ ]) ++ [
     ./sunshine-mic-common.patch
     ./sunshine-mic.patch
+    ./sunshine-multisession-dmabuf.patch
   ];
 
   ui = pkgs.buildNpmPackage {

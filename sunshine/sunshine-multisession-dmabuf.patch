@@ -1,0 +1,233 @@
+diff --git a/src/video.cpp b/src/video.cpp
+--- a/src/video.cpp
++++ b/src/video.cpp
+@@ -7,6 +7,7 @@
+ #include <array>
+ #include <atomic>
+ #include <bitset>
++#include <cstdlib>
+ #include <list>
+ #include <thread>
+ #include <utility>
+@@ -1292,7 +1293,7 @@
+       {},  // capabilities
+     },
+     // RC buffer size will be set in platform code if supported
+-    LIMITED_GOP_SIZE | PARALLEL_ENCODING | NO_RC_BUF_LIMIT
++    LIMITED_GOP_SIZE | NO_RC_BUF_LIMIT  // no PARALLEL_ENCODING: see capture()
+   };
+ 
+   #ifdef SUNSHINE_BUILD_VULKAN
+@@ -1365,7 +1366,7 @@
+       "h264_vulkan"s,
+       {},  // capabilities
+     },
+-    LIMITED_GOP_SIZE | PARALLEL_ENCODING
++    LIMITED_GOP_SIZE  // no PARALLEL_ENCODING: see capture()
+   };
+   #endif  // SUNSHINE_BUILD_VULKAN
+ #endif  // linux
+@@ -2977,7 +2978,18 @@
+     auto idr_events = mail->event<bool>(mail::idr);
+ 
+     idr_events->raise(true);
+-    if (chosen_encoder->flags & PARALLEL_ENCODING) {
++    // Hardware encoders import the captured frame into their own GPU context. Running two of them
++    // concurrently on one shared captured buffer hangs the host GPU on virtio-gpu/venus stacks, so
++    // the parallel-capture encoders (vaapi, vulkan) are serialized onto the single sync thread.
++    // SUNSHINE_PARALLEL_ENCODE=1 restores the previous threading for testing.
++    const char *parallel_env = std::getenv("SUNSHINE_PARALLEL_ENCODE");
++    const bool force_parallel = parallel_env && *parallel_env && *parallel_env != '0';
++    const bool use_parallel = force_parallel || (chosen_encoder->flags & PARALLEL_ENCODING);
++    BOOST_LOG(info) << "Capture/encode path for this session: "sv
++                    << (use_parallel ? "parallel (per-session thread)"sv : "serialized (shared capture thread)"sv)
++                    << ", encoder ["sv << chosen_encoder->name << "]"sv
++                    << (force_parallel ? ", forced by SUNSHINE_PARALLEL_ENCODE"sv : ""sv);
++    if (use_parallel) {
+       capture_async(std::move(mail), config, channel_data);
+     } else {
+       safe::signal_t join_event;
+diff --git a/src/video.h b/src/video.h
+--- a/src/video.h
++++ b/src/video.h
+@@ -764,6 +764,12 @@
+     if (config.framerateX100 > 0) {
+       return framerateX100_to_rational(config.framerateX100);
+     }
++    // A launch request that carries no framerate yields 0/1 here, and every consumer divides by the
++    // numerator (capture interval, encoder time_base), so a missing value used to kill the host with
++    // SIGFPE as soon as a session started. Fall back to 60 fps.
++    if (config.framerate <= 0) {
++      return AVRational {60, 1};
++    }
+     return AVRational {config.framerate, 1};
+   }
+ 
+diff --git a/src/stream.cpp b/src/stream.cpp
+--- a/src/stream.cpp
++++ b/src/stream.cpp
+@@ -6,6 +6,8 @@
+ // standard includes
+ #include <cstring>
+ #include <fstream>
++#include <format>
++#include <functional>
+ #include <future>
+ #include <mutex>
+ #include <optional>
+@@ -88,6 +90,18 @@
+ using namespace std::literals;
+ 
+ namespace stream {
++  /**
++   * @brief Short, stable label for a client identity without dumping the whole PEM certificate.
++   * @param identity Client certificate PEM or Moonlight unique id.
++   * @return Human-readable identity label for logs.
++   */
++  inline std::string client_label(const std::string &identity) {
++    if (identity.empty()) {
++      return "<unknown>"s;
++    }
++    const bool is_cert = identity.find("-----BEGIN"s) != std::string::npos;
++    return std::format("{}#{:08x}", is_cert ? "cert"sv : "id"sv, static_cast<unsigned>(std::hash<std::string> {}(identity)));
++  }
+ 
+ 
+   /**
+@@ -3099,6 +3113,13 @@
+     }
+ 
+     /**
++     * @brief Client identity used to recognise a reconnect from the same client install.
++     */
++    const std::string &client_identity(session_t &session) {
++      return session.input_session_id;
++    }
++
++    /**
+      * @brief Stop the active streaming session and prevent new packets from being queued.
+      */
+     void stop(session_t &session) {
+@@ -3168,7 +3189,9 @@
+         platf::streaming_will_stop();
+       }
+ 
+-      BOOST_LOG(debug) << "Session ended"sv;
++      BOOST_LOG(info) << "Session ended: client="sv << client_label(session.input_session_id)
++                      << ", launch_session_id="sv << session.launch_session_id
++                      << ", live sessions left="sv << running_sessions << ""sv;
+     }
+ 
+     /**
+diff --git a/src/stream.h b/src/stream.h
+--- a/src/stream.h
++++ b/src/stream.h
+@@ -95,5 +95,15 @@
+      * @return PEM certificate associated with the session's client.
+      */
+     const std::string &client_cert(session_t &session);
++    /**
++     * @brief Return the client identity a session was started for.
++     *
++     * The identity is the paired client certificate when the client is paired, and the Moonlight
++     * unique id otherwise, so a reconnect from the same client install can be recognised.
++     *
++     * @param session Active streaming or pairing session for the request.
++     * @return Identity string associated with the session's client.
++     */
++    const std::string &client_identity(session_t &session);
+   }  // namespace session
+ }  // namespace stream
+diff --git a/src/rtsp.cpp b/src/rtsp.cpp
+--- a/src/rtsp.cpp
++++ b/src/rtsp.cpp
+@@ -685,6 +685,33 @@
+     }
+ 
+     /**
++     * @brief Clear sessions belonging to one client identity.
++     *
++     * A client that reconnects (a network drop, a resumed stream) opens a new RTSP session while its
++     * previous one is still counting down its ping timeout. Dropping the previous session here keeps
++     * one encoder per physical client instead of one per connection attempt.
++     *
++     * @param identity Client certificate or Moonlight unique id of the reconnecting client.
++     * @return Number of sessions that were terminated.
++     */
++    int clear_by_identity(std::string_view identity) {
++      auto lg = _session_slots.lock();
++      int cleared = 0;
++      for (auto i = _session_slots->begin(); i != _session_slots->end();) {
++        auto &slot = *(*i);
++        if (!identity.empty() && stream::session::client_identity(slot) == identity) {
++          stream::session::stop(slot);
++          stream::session::join(slot);
++          i = _session_slots->erase(i);
++          ++cleared;
++        } else {
++          i++;
++        }
++      }
++      return cleared;
++    }
++
++    /**
+      * @brief Removes the provided session from the set of sessions.
+      * @param session The session to remove.
+      */
+@@ -771,6 +798,19 @@
+   }
+ 
+   /**
++   * @brief Terminate the sessions that belong to one client identity.
++   * @param identity Client certificate or Moonlight unique id.
++   * @return Number of sessions terminated.
++   */
++  int terminate_sessions_by_identity(std::string_view identity) {
++    const int cleared = server.clear_by_identity(identity);
++    if (cleared > 0) {
++      BOOST_LOG(info) << "Terminated "sv << cleared << " stale session(s) of the reconnecting client"sv;
++    }
++    return cleared;
++  }
++
++  /**
+    * @brief Send the serialized response over the active socket.
+    *
+    * @param sock Socket used to read or write the protocol message.
+diff --git a/src/rtsp.h b/src/rtsp.h
+--- a/src/rtsp.h
++++ b/src/rtsp.h
+@@ -79,6 +79,13 @@
+   void terminate_sessions_by_cert(std::string_view cert);
+ 
+   /**
++   * @brief Terminate sessions belonging to one client identity.
++   * @param identity Client certificate or Moonlight unique id.
++   * @return Number of sessions terminated.
++   */
++  int terminate_sessions_by_identity(std::string_view identity);
++
++  /**
+    * @brief Runs the RTSP server loop.
+    */
+   void start();
+diff --git a/src/nvhttp.cpp b/src/nvhttp.cpp
+--- a/src/nvhttp.cpp
++++ b/src/nvhttp.cpp
+@@ -1542,6 +1542,15 @@
+     );
+     tree.put("root.resume", 1);
+ 
++    // A resume re-arms the same launch session, but the client then opens a NEW RTSP session, and
++    // its previous session keeps encoding until its ping timeout expires. Drop that stale session
++    // first, so a reconnect costs one encoder instead of two.
++    const std::string &identity = launch_session->client_cert.empty() ? launch_session->unique_id : launch_session->client_cert;
++    const int replaced = rtsp_stream::terminate_sessions_by_identity(identity);
++    BOOST_LOG(info) << "Resume granted: client="sv << (identity.empty() ? "<unknown>"sv : (launch_session->client_cert.empty() ? "id"sv : "cert"sv))
++                    << ", replaced_sessions="sv << replaced
++                    << ", no_active_sessions="sv << (no_active_sessions ? "yes"sv : "no"sv) << ""sv;
++
+     rtsp_stream::launch_session_raise(launch_session);
+   }
+ 
