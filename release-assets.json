@@ -34,7 +34,7 @@
         "x86_64-linux": {
           "name": "sunshine-main-x86_64-linux.tar.gz",
           "url": "https://github.com/zeroqn/headless/releases/download/main-build/sunshine-main-x86_64-linux.tar.gz",
-          "hash": "sha256-XTv3pcyAK++GZ9KdLiptYbB8Zj64ztkB2XWhxJ0nbWE="
+          "hash": "sha256-H/ThXPxo2kLKe8VBWvg2FOtMIfexdnfVRPsm1fK3z90="
         }
       }
     },
@@ -45,7 +45,7 @@
         "x86_64-linux": {
           "name": "sunshine-main-cuda-x86_64-linux.tar.gz",
           "url": "https://github.com/zeroqn/headless/releases/download/main-build/sunshine-main-cuda-x86_64-linux.tar.gz",
-          "hash": "sha256-f/J0lJ98rJs+2l4JTg3PuU6ZJy0+WFaW9nqx/6uNZ9A="
+          "hash": "sha256-1VmMJPiopwA5U7AEIoY3WfiAS0HQC0IcgXRj2VuiUXU="
         }
       }
     },
