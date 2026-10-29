@@ -210,3 +210,20 @@ PUBLISH_GROUPS=waypipe nix run .#update-release-assets
 PUBLISH_GROUPS=mimalloc nix run .#update-release-assets
 PUBLISH_GROUPS=mesa nix run .#update-release-assets
 ```
+
+## Live test
+
+`test-sunshine-live.sh` builds `.#sunshineReleaseBuild`, starts it against a headless
+wlroots compositor, and drives the moonlight-common-c test client through three
+scenarios: one client with microphone audio captured from the `sunshine-mic` PipeWire
+source, two clients with distinct paired certificates streaming at the same time, and a
+reconnect with the same certificate. It exits non-zero if any check fails.
+
+```console
+./test-sunshine-live.sh
+```
+
+The run needs the paired client certificates, client state and `mic_client_res` from the
+mic-diag harness (`TEST_ASSETS`, default `.scratch/mic-diag`); an existing Wayland socket
+is reused, and logs land in `.scratch/sunshine-live/<timestamp>/`. Set `SUN_BIN` to test
+a binary that is already built.
