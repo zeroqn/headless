@@ -220,7 +220,7 @@ source, two clients with distinct paired certificates streaming at the same time
 reconnect with the same certificate. It exits non-zero if any check fails.
 
 ```console
-./test-sunshine-live.sh
+just sunshine-live-test     # or: ./test-sunshine-live.sh
 ```
 
 The run needs the paired client certificates, client state and `mic_client_res` from the
