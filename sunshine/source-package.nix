@@ -40,6 +40,7 @@ sunshine.overrideAttrs (old: {
     ./sunshine-mic-common.patch
     ./sunshine-mic.patch
     ./sunshine-multisession-dmabuf.patch
+    ./sunshine-teardown-off-http-thread.patch
   ];
 
   ui = pkgs.buildNpmPackage {

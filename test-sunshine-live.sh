@@ -217,10 +217,31 @@ if wait_for_stream "$out/client-3b.log"; then pass "reconnect received video"; e
 sleep 4
 wait "$c3b" 2>/dev/null
 wait "$c3a" 2>/dev/null
-if wait_for_log 'Terminated 1 stale session\(s\)'; then
-  pass "reconnect replaced the stale session"
+# The stale session is only asked to stop on the request thread now; the RTSP loop joins
+# and erases it a moment later, so assert both halves of that hand-off.
+if wait_for_log 'Stopping 1 stale session\(s\)'; then
+  pass "reconnect stopped the stale session"
 else
-  fail "stale session was not replaced on reconnect"
+  fail "stale session was not stopped on reconnect"
+fi
+if grep -q 'Resume granted: .*replaced_sessions=1' "$out/sunshine.log"; then
+  pass "resume reported one replaced session"
+else
+  fail "resume did not report a replaced session"
+fi
+# One encoder per physical client: after the hand-off the stale session must be reaped and
+# the new one must be the only member of the session set (never "active sessions: 2").
+after=$(sed -n '/Stopping 1 stale session/,$p' "$out/sunshine.log")
+if grep -q 'Session ended:' <<< "$after"; then
+  pass "stale session was reaped by the RTSP loop"
+else
+  fail "stale session was never reaped after the reconnect"
+fi
+if grep -q 'New streaming session started \[active sessions: 1\]' <<< "$after" &&
+   ! grep -q 'active sessions: 2' <<< "$after"; then
+  pass "reconnect ended with a single live session"
+else
+  fail "reconnect did not converge to a single live session"
 fi
 
 # ---------------------------------------------------------------- host health

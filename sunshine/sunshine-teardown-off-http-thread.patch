@@ -1,0 +1,180 @@
+diff --git a/src/rtsp.cpp b/src/rtsp.cpp
+--- a/src/rtsp.cpp
++++ b/src/rtsp.cpp
+@@ -697,15 +697,17 @@
+     int clear_by_identity(std::string_view identity) {
+       auto lg = _session_slots.lock();
+       int cleared = 0;
+-      for (auto i = _session_slots->begin(); i != _session_slots->end();) {
++      for (auto i = _session_slots->begin(); i != _session_slots->end(); ++i) {
+         auto &slot = *(*i);
+         if (!identity.empty() && stream::session::client_identity(slot) == identity) {
++          // Only ask the session to stop. Joining and erasing it here would run the whole
++          // teardown (broadcast threads, audio and microphone release) on the nvhttp request
++          // thread while holding _session_slots, and any of those steps can block on a wedged
++          // platform resource. That would freeze 47984 -- the only port Moonlight polls to
++          // decide whether this host is online -- until Sunshine is restarted. The RTSP loop
++          // reaps stopped sessions on its own (rtsp::handler, clear(false)).
+           stream::session::stop(slot);
+-          stream::session::join(slot);
+-          i = _session_slots->erase(i);
+           ++cleared;
+-        } else {
+-          i++;
+         }
+       }
+       return cleared;
+@@ -805,7 +807,7 @@
+   int terminate_sessions_by_identity(std::string_view identity) {
+     const int cleared = server.clear_by_identity(identity);
+     if (cleared > 0) {
+-      BOOST_LOG(info) << "Terminated "sv << cleared << " stale session(s) of the reconnecting client"sv;
++      BOOST_LOG(info) << "Stopping "sv << cleared << " stale session(s) of the reconnecting client; the RTSP loop reaps them"sv;
+     }
+     return cleared;
+   }
+diff --git a/src/stream.cpp b/src/stream.cpp
+--- a/src/stream.cpp
++++ b/src/stream.cpp
+@@ -3123,7 +3123,15 @@
+      * @brief Stop the active streaming session and prevent new packets from being queued.
+      */
+     void stop(session_t &session) {
+-      while_starting_do_nothing(session.state);
++      // A session that is still starting cannot be stopped yet, and waiting for it here is
++      // unbounded work: this is called from the nvhttp request thread on a reconnect, where a
++      // session stuck in STARTING would hang the request (and the session mutex) forever. Give
++      // the state change a short window, then leave the session to the RTSP loop's cleanup,
++      // which finds it once its own threads settle.
++      for (int waited = 0; waited < 250 && session.state.load(std::memory_order_acquire) == state_e::STARTING; ++waited) {
++        std::this_thread::sleep_for(1ms);
++      }
++
+       auto expected = state_e::RUNNING;
+       auto already_stopping = !session.state.compare_exchange_strong(expected, state_e::STOPPING);
+       if (already_stopping) {
+diff --git a/src/platform/linux/audio.cpp b/src/platform/linux/audio.cpp
+--- a/src/platform/linux/audio.cpp
++++ b/src/platform/linux/audio.cpp
+@@ -411,6 +411,29 @@
+       }
+ 
+       /**
++       * @brief Wait for a PulseAudio operation to answer, giving up when the server stops doing so.
++       *
++       * Every call site here runs either on the session thread that drives audio or in this
++       * context's destructor, i.e. on whichever thread releases the last audio reference. A
++       * PulseAudio server that was killed or frozen never answers, so an unbounded wait turns
++       * into a wedged session teardown -- and if that teardown happens while another thread is
++       * waiting for the session to finish, it wedges that thread too.
++       *
++       * @param alarm Alarm rung by the operation's callback.
++       * @param what Operation name used in the log line.
++       * @return True when the operation answered within the deadline.
++       */
++      template<class T>
++      bool wait_op(const safe::alarm_t<T> &alarm, std::string_view what) {
++        if (!alarm->wait_for(2s)) {
++          BOOST_LOG(warning) << "PulseAudio did not answer "sv << what << " within 2s; continuing without it"sv;
++          return false;
++        }
++
++        return true;
++      }
++
++      /**
+        * @brief Create a PulseAudio null sink for one channel layout.
+        *
+        * @param name Human-readable name to assign.
+@@ -431,7 +454,10 @@
+           ),
+         };
+ 
+-        alarm->wait();
++        if (!wait_op(alarm, "loading a null-sink"sv)) {
++          return PA_INVALID_INDEX;
++        }
++
+         return *alarm->status();
+       }
+ 
+@@ -452,7 +478,12 @@
+           pa_context_unload_module(ctx.get(), i, success_cb, alarm.get())
+         };
+ 
+-        alarm->wait();
++        // This runs in the audio context destructor, i.e. on whichever session thread releases
++        // the last audio reference. A PulseAudio server that has gone away never answers, so an
++        // unbounded wait here would hang that thread and with it the session teardown.
++        if (!wait_op(alarm, "unloading a null-sink"sv)) {
++          return -1;
++        }
+ 
+         if (*alarm->status()) {
+           BOOST_LOG(error) << "Couldn't unload null-sink with index ["sv << i << "]: "sv << pa_strerror(pa_context_errno(ctx.get()));
+@@ -515,7 +546,9 @@
+           return std::nullopt;
+         }
+ 
+-        alarm->wait();
++        if (!wait_op(alarm, "listing sinks"sv)) {
++          return std::nullopt;
++        }
+ 
+         if (*alarm->status()) {
+           return std::nullopt;
+@@ -584,8 +617,8 @@
+         };
+ 
+         op_t server_op {pa_context_get_server_info(ctx.get(), cb<pa_server_info *>, &server_f)};
+-        alarm->wait();
+-        // No need to check status. If it failed just return default name.
++        // No need to check status. If it failed (or did not answer) just return the empty name.
++        wait_op(alarm, "querying the default sink"sv);
+         return sink_name;
+       }
+ 
+@@ -620,8 +653,11 @@
+ 
+         op_t sink_op {pa_context_get_sink_info_by_name(ctx.get(), sink_name.c_str(), cb<pa_sink_info *>, &sink_f)};
+ 
+-        alarm->wait();
+-        // No need to check status. If it failed just return default name.
++        // No need to check status. If it failed (or did not answer) there is no monitor name.
++        if (!wait_op(alarm, "querying the monitor source"sv)) {
++          return monitor_name;
++        }
++
+         BOOST_LOG(info) << "Found default monitor by name: "sv << monitor_name;
+         return monitor_name;
+       }
+@@ -685,7 +721,10 @@
+           return -1;
+         }
+ 
+-        alarm->wait();
++        if (!wait_op(alarm, "setting the default sink"sv)) {
++          return -1;
++        }
++
+         if (*alarm->status()) {
+           BOOST_LOG(error) << "Couldn't set default-sink ["sv << sink << "]: "sv << pa_strerror(pa_context_errno(ctx.get()));
+ 
+@@ -719,9 +758,14 @@
+         if (worker.joinable()) {
+           pa_context_disconnect(ctx.get());
+ 
+-          KITTY_WHILE_LOOP(auto event = events->pop(), event != terminated && event != failed, {
+-            event = events->pop();
+-          })
++          // Bound this wait: if the connection died before reporting its state, no event will
++          // ever arrive and the join below would block the calling session thread forever.
++          for (int waited = 0; waited < 20; ++waited) {
++            auto event = events->pop(100ms);
++            if (!event || event == terminated || event == failed) {
++              break;
++            }
++          }
+ 
+           pa_mainloop_quit(loop.get(), 0);
+           worker.join();
