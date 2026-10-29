@@ -12,7 +12,7 @@
         "x86_64-linux": {
           "name": "niri-headless-main-x86_64-linux.tar.gz",
           "url": "https://github.com/zeroqn/headless/releases/download/main-build/niri-headless-main-x86_64-linux.tar.gz",
-          "hash": "sha256-vLL+0QfhSwuOrI1fUwNjlwtuD++EJqzzfFigMcHKnb0="
+          "hash": "sha256-WIigBY6RPrAaRBnHg1vkTfQtTYMzJDhxYcnK85bVvAw="
         }
       }
     },
@@ -23,29 +23,29 @@
         "x86_64-linux": {
           "name": "rio-d656326-x86_64-linux.tar.gz",
           "url": "https://github.com/zeroqn/headless/releases/download/main-build/rio-d656326-x86_64-linux.tar.gz",
-          "hash": "sha256-86LA9VNmIASwwEeK5OPdezoD2U2r1HLfHM0K3xqV2rc="
+          "hash": "sha256-by5IWSHAGnK3C6+wMbBxaB1upb83UJpzqxJPvO5ANXI="
         }
       }
     },
     "sunshine": {
-      "version": "2026.09.19.vulkan",
-      "revision": "7e4a74010450f40f68e8b730f706ed83524d2a5e",
+      "version": "2026.10.28.vulkan",
+      "revision": "a679b059096bcdd502e2192ce4f6a3c3732fbaae",
       "assets": {
         "x86_64-linux": {
           "name": "sunshine-main-x86_64-linux.tar.gz",
           "url": "https://github.com/zeroqn/headless/releases/download/main-build/sunshine-main-x86_64-linux.tar.gz",
-          "hash": "sha256-UBxVr+autUR4xP7t1gt+aneSi0qmrtM3honhpt55Ln4="
+          "hash": "sha256-XTv3pcyAK++GZ9KdLiptYbB8Zj64ztkB2XWhxJ0nbWE="
         }
       }
     },
     "sunshine-cuda": {
-      "version": "2026.09.19.vulkan",
-      "revision": "7e4a74010450f40f68e8b730f706ed83524d2a5e",
+      "version": "2026.10.28.vulkan",
+      "revision": "a679b059096bcdd502e2192ce4f6a3c3732fbaae",
       "assets": {
         "x86_64-linux": {
           "name": "sunshine-main-cuda-x86_64-linux.tar.gz",
           "url": "https://github.com/zeroqn/headless/releases/download/main-build/sunshine-main-cuda-x86_64-linux.tar.gz",
-          "hash": "sha256-wpQxkaYX4BpBeb4OJbsCUGEH5vFqWdazP6FDujS/Jyk="
+          "hash": "sha256-f/J0lJ98rJs+2l4JTg3PuU6ZJy0+WFaW9nqx/6uNZ9A="
         }
       }
     },
@@ -67,7 +67,7 @@
         "x86_64-linux": {
           "name": "waypipe-6cccb84b-x86_64-linux.tar.gz",
           "url": "https://github.com/zeroqn/headless/releases/download/main-build/waypipe-6cccb84b-x86_64-linux.tar.gz",
-          "hash": "sha256-Kea6UcUGiVgFszJeHWMluECRHFeB/sqnXfuiDxvtomw="
+          "hash": "sha256-TF5ANVDctC/SMFRYzasqBBi26VSExVKA4UeCFaieMTA="
         }
       }
     },
