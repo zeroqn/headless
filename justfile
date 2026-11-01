@@ -12,3 +12,10 @@ default:
 #   SUN_BIN=./result-sunshine-prebuilt/bin/sunshine just sunshine-live-test
 sunshine-live-test:
     ./test-sunshine-live.sh
+
+# Diagnose a "Moonlight says the host is offline" report: probes both front ends the way
+# Moonlight does, then captures listeners, connections, service state and thread states.
+#   just diagnose-serverinfo
+#   just diagnose-serverinfo --stack
+diagnose-serverinfo *ARGS:
+    ./diagnose-serverinfo.sh {{ARGS}}
