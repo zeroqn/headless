@@ -19,3 +19,11 @@ sunshine-live-test:
 #   just diagnose-serverinfo --stack
 diagnose-serverinfo *ARGS:
     ./diagnose-serverinfo.sh {{ARGS}}
+
+# Sample a streaming session and report why it stutters: FEC blocks per frame (frames over
+# the 4-block limit are sent without FEC), host-side capture+encode latency, and the UDP
+# send rate. Streams 4K60 at 50 Mbps by default with the test client.
+#   just diagnose-stream-quality
+#   just diagnose-stream-quality --bitrate 150000 --extra-conf 'packetsize = 200'
+diagnose-stream-quality *ARGS:
+    ./diagnose-stream-quality.sh {{ARGS}}
