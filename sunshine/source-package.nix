@@ -41,6 +41,7 @@ sunshine.overrideAttrs (old: {
     ./sunshine-mic.patch
     ./sunshine-multisession-dmabuf.patch
     ./sunshine-teardown-off-http-thread.patch
+    ./sunshine-bounded-launch-prep.patch
   ];
 
   ui = pkgs.buildNpmPackage {

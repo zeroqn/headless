@@ -1,0 +1,220 @@
+diff --git a/src/nvhttp.cpp b/src/nvhttp.cpp
+--- a/src/nvhttp.cpp
++++ b/src/nvhttp.cpp
+@@ -8,10 +8,17 @@
+ // standard includes
+ #include <algorithm>
+ #include <chrono>
++#include <condition_variable>
++#include <deque>
+ #include <filesystem>
+ #include <format>
++#include <fstream>
++#include <functional>
++#include <future>
+ #include <mutex>
++#include <optional>
+ #include <string>
++#include <thread>
+ #include <utility>
+ 
+ // lib includes
+@@ -43,6 +50,144 @@
+ 
+ namespace nvhttp {
+ 
++  namespace {
++    /**
++     * @brief How long a launch or resume request waits for the display and encoder preparation.
++     *
++     * The preparation itself is not bounded (it drives the compositor, logind/seatd and the
++     * encoder backends), so this is the only thing standing between a stuck preparation and a
++     * wedged front end.
++     */
++    constexpr auto STREAM_PREPARE_TIMEOUT {20s};
++
++    /**
++     * @brief Serial worker for the display and encoder preparation done on launch and resume.
++     *
++     * Upstream runs this work directly in the nvhttp request handler, and every 47984 request
++     * handler shares one thread. Moonlight decides whether this host is online by polling
++     * /serverinfo on 47984, so a preparation call that never returns -- a compositor round trip
++     * or a logind/seatd D-Bus call parked in poll(), which is what a thread wedged in this path
++     * looks like -- makes the host look offline until Sunshine is restarted, and leaves nothing
++     * in the log. Running the preparation here keeps that thread free.
++     *
++     * The worker is serial (a display must not be changed twice at once) and lives for the
++     * process, so a call that never returns costs one queued job, not a thread per launch.
++     */
++    /**
++     * @brief Marker file written while a stream preparation has overrun its deadline.
++     *
++     * The health service (see the NixOS module) restarts Sunshine when this file exists, because
++     * a preparation that never returns cannot be recovered from inside the process: the job holds
++     * the serial worker, so every later launch and resume would fail the same way.
++     */
++    std::filesystem::path prepare_stuck_marker() {
++      const auto *runtime_dir = std::getenv("XDG_RUNTIME_DIR");
++      return runtime_dir ? std::filesystem::path {runtime_dir} / "sunshine-prepare.stuck"sv
++                         : std::filesystem::path {"/tmp/sunshine-prepare.stuck"sv};
++    }
++
++    /**
++     * @brief Raise or clear the stuck-preparation marker.
++     * @param stuck Whether a preparation is currently overrunning.
++     */
++    void set_prepare_stuck(bool stuck) {
++      std::error_code ec;
++      if (stuck) {
++        std::ofstream {prepare_stuck_marker()} << "a stream preparation did not finish in time\n";
++      } else {
++        std::filesystem::remove(prepare_stuck_marker(), ec);
++      }
++    }
++
++    class stream_prepare_worker_t {
++    public:
++      /**
++       * @brief Queue a preparation job.
++       * @param job Callable returning the encoder probe result.
++       * @return Future resolving with the job's result.
++       */
++      std::future<int> submit(std::function<int()> job) {
++        auto task = std::make_shared<std::packaged_task<int()>>(std::move(job));
++        auto future = task->get_future();
++
++        {
++          std::lock_guard lg {_mutex};
++          _queue.emplace_back([task] {
++            (*task)();
++            // The job finished, so a preparation that had been reported as stuck is no longer.
++            set_prepare_stuck(false);
++          });
++        }
++        _cv.notify_one();
++
++        return future;
++      }
++
++    private:
++      std::mutex _mutex;
++      std::condition_variable_any _cv;
++      std::deque<std::function<void()>> _queue;
++
++      std::jthread _thread {[this](const std::stop_token &token) {
++        for (;;) {
++          std::function<void()> job;
++          {
++            std::unique_lock lg {_mutex};
++            if (!_cv.wait(lg, token, [this] { return !_queue.empty(); })) {
++              return;
++            }
++            job = std::move(_queue.front());
++            _queue.pop_front();
++          }
++
++          job();
++        }
++      }};
++    };
++
++    /**
++     * @brief Prepare the display and probe the encoders without blocking the request thread.
++     *
++     * @param session Launch session describing the stream about to start.
++     * @return The encoder probe result, or std::nullopt when the preparation did not finish in
++     *         time (and the request should be failed instead of waiting forever).
++     */
++    std::optional<int> prepare_stream_bounded(const std::shared_ptr<rtsp_stream::launch_session_t> &session) {
++      static stream_prepare_worker_t worker;
++
++      auto future = worker.submit([session] {
++        const auto started = std::chrono::steady_clock::now();
++        BOOST_LOG(info) << "Preparing the display for streaming"sv;
++        display_device::configure_display(config::video, *session);
++
++        const auto prepared = std::chrono::steady_clock::now();
++        BOOST_LOG(info) << "Display prepared in "sv << std::chrono::duration_cast<std::chrono::milliseconds>(prepared - started).count() << "ms; probing encoders"sv;
++
++        const auto probe_result = video::probe_encoders();
++        const auto probed = std::chrono::steady_clock::now();
++        BOOST_LOG(info) << "Encoder probe finished in "sv << std::chrono::duration_cast<std::chrono::milliseconds>(probed - prepared).count() << "ms"sv;
++
++        return probe_result;
++      });
++
++      if (future.wait_for(STREAM_PREPARE_TIMEOUT) != std::future_status::ready) {
++        BOOST_LOG(error) << "Stream preparation did not finish within "sv
++                         << std::chrono::duration_cast<std::chrono::seconds>(STREAM_PREPARE_TIMEOUT).count()
++                         << "s and was abandoned; the last 'Preparing the display' / 'Display prepared' line"
++                            " in this log names the call that is stuck"sv;
++
++        // The job still holds the serial worker, so no later launch can succeed. Flag it so the
++        // health service restarts Sunshine instead of leaving a host that answers every poll and
++        // fails every launch.
++        set_prepare_stuck(true);
++
++        return std::nullopt;
++      }
++
++      return future.get();
++    }
++  }  // namespace
++
+   static constexpr std::string_view EMPTY_PROPERTY_TREE_ERROR_MSG = "Property tree is empty. Probably, control flow got interrupted by an unexpected C++ exception. This is a bug in Sunshine. Moonlight-qt will report Malformed XML (missing root element)."sv;
+ 
+   namespace fs = std::filesystem;
+@@ -1391,14 +1536,23 @@
+ 
+       // We want to prepare display only if there are no active sessions at
+       // the moment. This should be done before probing encoders as it could
+-      // change the active displays.
+-      display_device::configure_display(config::video, *launch_session);
++      // change the active displays. Together with the encoder probe this runs
++      // through prepare_stream_bounded so that a stuck call cannot take the
++      // 47984 request thread with it.
++      const auto probe_result = prepare_stream_bounded(launch_session);
++      if (!probe_result) {
++        tree.put("root.<xmlattr>.status_code", 503);
++        tree.put("root.<xmlattr>.status_message", "The host is still finishing a previous stream preparation. Try again.");
++        tree.put("root.gamesession", 0);
++
++        return;
++      }
+ 
+       // Probe encoders again before streaming to ensure our chosen
+       // encoder matches the active GPU (which could have changed
+       // due to hotplugging, driver crash, primary monitor change,
+       // or any number of other factors).
+-      if (video::probe_encoders()) {
++      if (*probe_result) {
+         tree.put("root.<xmlattr>.status_code", 503);
+         tree.put("root.<xmlattr>.status_message", "Failed to initialize video capture/encoding. Is a display connected and turned on?");
+         tree.put("root.gamesession", 0);
+@@ -1503,14 +1657,23 @@
+     if (no_active_sessions) {
+       // We want to prepare display only if there are no active sessions at
+       // the moment. This should be done before probing encoders as it could
+-      // change the active displays.
+-      display_device::configure_display(config::video, *launch_session);
++      // change the active displays. Together with the encoder probe this runs
++      // through prepare_stream_bounded so that a stuck call cannot take the
++      // 47984 request thread with it.
++      const auto probe_result = prepare_stream_bounded(launch_session);
++      if (!probe_result) {
++        tree.put("root.resume", 0);
++        tree.put("root.<xmlattr>.status_code", 503);
++        tree.put("root.<xmlattr>.status_message", "The host is still finishing a previous stream preparation. Try again.");
++
++        return;
++      }
+ 
+       // Probe encoders again before streaming to ensure our chosen
+       // encoder matches the active GPU (which could have changed
+       // due to hotplugging, driver crash, primary monitor change,
+       // or any number of other factors).
+-      if (video::probe_encoders()) {
++      if (*probe_result) {
+         tree.put("root.resume", 0);
+         tree.put("root.<xmlattr>.status_code", 503);
+         tree.put("root.<xmlattr>.status_message", "Failed to initialize video capture/encoding. Is a display connected and turned on?");
