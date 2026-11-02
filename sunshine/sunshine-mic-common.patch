@@ -1,7 +1,8 @@
 diff --git a/third-party/moonlight-common-c/src/Limelight-internal.h b/third-party/moonlight-common-c/src/Limelight-internal.h
+index 8927353..bcf35c8 100644
 --- a/third-party/moonlight-common-c/src/Limelight-internal.h
 +++ b/third-party/moonlight-common-c/src/Limelight-internal.h
-@@ -48,6 +48,12 @@
+@@ -48,6 +48,12 @@ extern uint32_t SunshineFeatureFlags;
  #define SS_ENC_CONTROL_V2 0x01
  #define SS_ENC_VIDEO 0x02
  #define SS_ENC_AUDIO 0x04

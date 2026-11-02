@@ -23,11 +23,11 @@ let
   ]);
   src = pkgs.fetchgit {
     url = "https://github.com/LizardByte/Sunshine.git";
-    rev = "a679b059096bcdd502e2192ce4f6a3c3732fbaae";
-    hash = "sha256-yKg+kHy3p8YP7ryyIdj8dhGDblYH0i1GqFgtB4U7fb0=";
+    rev = "c10125088da1f61e72fe1c65faa996a297490d36";
+    hash = "sha256-8lk/9lYuBgUC+cysho8zDSoB7acape9sMksdCvbn2k4=";
     fetchSubmodules = true;
   };
-  version = "2026.10.28.vulkan";
+  version = "2026.11.02.vulkan";
 in
 
 sunshine.overrideAttrs (old: {

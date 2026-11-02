@@ -1,5 +1,5 @@
 diff --git a/cmake/compile_definitions/common.cmake b/cmake/compile_definitions/common.cmake
-index f3b9390b..c2c9e310 100644
+index f3b9390..c2c9e31 100644
 --- a/cmake/compile_definitions/common.cmake
 +++ b/cmake/compile_definitions/common.cmake
 @@ -177,6 +177,8 @@ set(SUNSHINE_TARGET_FILES
@@ -12,7 +12,7 @@ index f3b9390b..c2c9e310 100644
          "${CMAKE_SOURCE_DIR}/src/platform/permissions.cpp"
          "${CMAKE_SOURCE_DIR}/src/platform/permissions.h"
 diff --git a/cmake/compile_definitions/linux.cmake b/cmake/compile_definitions/linux.cmake
-index a842678d..e51a8fc9 100644
+index a842678..e51a8fc 100644
 --- a/cmake/compile_definitions/linux.cmake
 +++ b/cmake/compile_definitions/linux.cmake
 @@ -272,6 +272,21 @@ if(PIPEWIRE_FOUND)
@@ -38,7 +38,7 @@ index a842678d..e51a8fc9 100644
  set(PORTAL_FOUND OFF)
  if(PIPEWIRE_FOUND AND GIO_FOUND AND ${SUNSHINE_ENABLE_PORTAL})
 diff --git a/docs/configuration.md b/docs/configuration.md
-index cf76e366..312dcd19 100644
+index cf76e36..312dcd1 100644
 --- a/docs/configuration.md
 +++ b/docs/configuration.md
 @@ -913,6 +913,37 @@ consent prompt for directory ACLs, so the Web UI shows setup steps for correctin
@@ -80,7 +80,7 @@ index cf76e366..312dcd19 100644
  
  <table>
 diff --git a/src/audio.cpp b/src/audio.cpp
-index 00ddb12d..92770d61 100644
+index 00ddb12..92770d6 100644
 --- a/src/audio.cpp
 +++ b/src/audio.cpp
 @@ -279,6 +279,39 @@ namespace audio {
@@ -124,7 +124,7 @@ index 00ddb12d..92770d61 100644
      if (!ctx.control) {
        return false;
 diff --git a/src/audio.h b/src/audio.h
-index a6709251..568e9c68 100644
+index a670925..568e9c6 100644
 --- a/src/audio.h
 +++ b/src/audio.h
 @@ -144,4 +144,30 @@ namespace audio {
@@ -159,7 +159,7 @@ index a6709251..568e9c68 100644
 +  int write_mic_pcm(const std::int16_t *samples, std::size_t frame_count);
  }  // namespace audio
 diff --git a/src/config.cpp b/src/config.cpp
-index 7705aa64..31237672 100644
+index 1e4300b..4023ea0 100644
 --- a/src/config.cpp
 +++ b/src/config.cpp
 @@ -829,6 +829,7 @@ namespace config {
@@ -179,7 +179,7 @@ index 7705aa64..31237672 100644
      string_restricted_f(vars, "origin_web_ui_allowed", nvhttp.origin_web_ui_allowed, {"pc"sv, "lan"sv, "wan"sv});
  
 diff --git a/src/config.h b/src/config.h
-index d13ddfd4..b82deb2e 100644
+index d13ddfd..b82deb2 100644
 --- a/src/config.h
 +++ b/src/config.h
 @@ -241,6 +241,7 @@ namespace config {
@@ -191,7 +191,7 @@ index d13ddfd4..b82deb2e 100644
  
    /**
 diff --git a/src/crypto.cpp b/src/crypto.cpp
-index 4837fa82..e15d8784 100644
+index 4837fa8..e15d878 100644
 --- a/src/crypto.cpp
 +++ b/src/crypto.cpp
 @@ -141,6 +141,21 @@ namespace crypto {
@@ -252,7 +252,7 @@ index 4837fa82..e15d8784 100644
          cipher_t {nullptr, nullptr, key_material, use_padding} {
      }
 diff --git a/src/crypto.h b/src/crypto.h
-index 98be726c..0fa3c1f4 100644
+index 98be726..0fa3c1f 100644
 --- a/src/crypto.h
 +++ b/src/crypto.h
 @@ -364,6 +364,16 @@ namespace crypto {
@@ -274,7 +274,7 @@ index 98be726c..0fa3c1f4 100644
  }  // namespace crypto
 diff --git a/src/mic_mixer.cpp b/src/mic_mixer.cpp
 new file mode 100644
-index 00000000..c9e0af70
+index 0000000..c9e0af7
 --- /dev/null
 +++ b/src/mic_mixer.cpp
 @@ -0,0 +1,430 @@
@@ -710,7 +710,7 @@ index 00000000..c9e0af70
 +}  // namespace mic_mixer
 diff --git a/src/mic_mixer.h b/src/mic_mixer.h
 new file mode 100644
-index 00000000..d70fee4e
+index 0000000..d70fee4
 --- /dev/null
 +++ b/src/mic_mixer.h
 @@ -0,0 +1,99 @@
@@ -814,7 +814,7 @@ index 00000000..d70fee4e
 +  };
 +}  // namespace mic_mixer
 diff --git a/src/platform/common.h b/src/platform/common.h
-index 62961d7a..9155dc4f 100644
+index 62961d7..9155dc4 100644
 --- a/src/platform/common.h
 +++ b/src/platform/common.h
 @@ -876,6 +876,38 @@ namespace platf {
@@ -857,7 +857,7 @@ index 62961d7a..9155dc4f 100644
       * @brief Destroy the audio control.
       */
 diff --git a/src/platform/linux/audio.cpp b/src/platform/linux/audio.cpp
-index f13e0db7..c5d412c0 100644
+index f13e0db..c5d412c 100644
 --- a/src/platform/linux/audio.cpp
 +++ b/src/platform/linux/audio.cpp
 @@ -16,6 +16,9 @@
@@ -893,7 +893,7 @@ index f13e0db7..c5d412c0 100644
          unload_null(index.surround51);
 diff --git a/src/platform/linux/mic_redirect.cpp b/src/platform/linux/mic_redirect.cpp
 new file mode 100644
-index 00000000..9c95d211
+index 0000000..9c95d21
 --- /dev/null
 +++ b/src/platform/linux/mic_redirect.cpp
 @@ -0,0 +1,549 @@
@@ -1448,7 +1448,7 @@ index 00000000..9c95d211
 +}  // namespace platf::mic_redirect
 diff --git a/src/platform/linux/mic_redirect.h b/src/platform/linux/mic_redirect.h
 new file mode 100644
-index 00000000..2bcbe352
+index 0000000..2bcbe35
 --- /dev/null
 +++ b/src/platform/linux/mic_redirect.h
 @@ -0,0 +1,45 @@
@@ -1498,7 +1498,7 @@ index 00000000..2bcbe352
 +  write(const std::int16_t *samples, std::size_t frame_count);
 +}  // namespace platf::mic_redirect
 diff --git a/src/rtsp.cpp b/src/rtsp.cpp
-index 71253733..91f9d244 100644
+index 7125373..91f9d24 100644
 --- a/src/rtsp.cpp
 +++ b/src/rtsp.cpp
 @@ -881,6 +881,11 @@ namespace rtsp_stream {
@@ -1562,7 +1562,7 @@ index 71253733..91f9d244 100644
        cmd_not_found(sock, session, std::move(req));
  
 diff --git a/src/rtsp.h b/src/rtsp.h
-index 108c881e..c3339172 100644
+index 108c881..c333917 100644
 --- a/src/rtsp.h
 +++ b/src/rtsp.h
 @@ -93,6 +93,8 @@ namespace rtsp_stream {
@@ -1575,7 +1575,7 @@ index 108c881e..c3339172 100644
  
      std::optional<crypto::cipher::gcm_t> rtsp_cipher;  ///< AES-GCM cipher used once encrypted RTSP is negotiated.
 diff --git a/src/stream.cpp b/src/stream.cpp
-index 2f2db0c2..6001c0d0 100644
+index 21c5c2b..473292d 100644
 --- a/src/stream.cpp
 +++ b/src/stream.cpp
 @@ -8,9 +8,13 @@
@@ -2519,7 +2519,7 @@ index 2f2db0c2..6001c0d0 100644
    int start_broadcast(broadcast_ctx_t &ctx);
    /**
     * @brief Stop broadcast processing.
-@@ -2031,6 +2926,7 @@ namespace stream {
+@@ -2090,6 +2985,7 @@ namespace stream {
      ctx.control_thread = std::jthread {controlBroadcastThread, &ctx.control_server};
  
      ctx.recv_thread = std::jthread {recvThread, std::ref(ctx)};
@@ -2527,7 +2527,7 @@ index 2f2db0c2..6001c0d0 100644
  
      return 0;
    }
-@@ -2052,10 +2948,15 @@ namespace stream {
+@@ -2111,10 +3007,15 @@ namespace stream {
  
      ctx.message_queue_queue->stop();
      ctx.io_context.stop();
@@ -2543,7 +2543,7 @@ index 2f2db0c2..6001c0d0 100644
      video_packets.reset();
      audio_packets.reset();
  
-@@ -2067,6 +2968,8 @@ namespace stream {
+@@ -2126,6 +3027,8 @@ namespace stream {
      ctx.audio_thread.join();
      BOOST_LOG(debug) << "Waiting for main control thread to end..."sv;
      ctx.control_thread.join();
@@ -2552,7 +2552,7 @@ index 2f2db0c2..6001c0d0 100644
      BOOST_LOG(debug) << "All broadcasting threads ended"sv;
  
      broadcast_shutdown_event->reset();
-@@ -2243,6 +3146,14 @@ namespace stream {
+@@ -2302,6 +3205,14 @@ namespace stream {
        session.videoThread.join();
        BOOST_LOG(debug) << "Waiting for audio to end..."sv;
        session.audioThread.join();
@@ -2567,7 +2567,7 @@ index 2f2db0c2..6001c0d0 100644
        BOOST_LOG(debug) << "Waiting for control to end..."sv;
        session.controlEnd.view();
        // Reset input on session stop to avoid stuck repeated keys
-@@ -2304,6 +3215,12 @@ namespace stream {
+@@ -2363,6 +3274,12 @@ namespace stream {
        session.audioThread = std::jthread {audioThread, &session};
        session.videoThread = std::jthread {videoThread, &session};
  
@@ -2580,7 +2580,7 @@ index 2f2db0c2..6001c0d0 100644
        session.state.store(state_e::RUNNING, std::memory_order_relaxed);
  
        // If this is the first session, invoke the platform callbacks
-@@ -2385,6 +3302,7 @@ namespace stream {
+@@ -2444,6 +3361,7 @@ namespace stream {
        session->audio.avRiKeyId = util::endian::big(*(std::uint32_t *) launch_session.iv.data());
        session->audio.sequenceNumber = 0;
        session->audio.timestamp = 0;
@@ -2589,7 +2589,7 @@ index 2f2db0c2..6001c0d0 100644
        session->control.peer = nullptr;
        session->state.store(state_e::STOPPED, std::memory_order_relaxed);
 diff --git a/src/stream.h b/src/stream.h
-index c0b0f962..c2b4a111 100644
+index c0b0f96..c2b4a11 100644
 --- a/src/stream.h
 +++ b/src/stream.h
 @@ -19,6 +19,7 @@ namespace stream {

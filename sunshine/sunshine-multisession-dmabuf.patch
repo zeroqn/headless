@@ -1,5 +1,5 @@
 diff --git a/src/nvhttp.cpp b/src/nvhttp.cpp
-index bf1bf6a6..447ca743 100644
+index bf1bf6a..447ca74 100644
 --- a/src/nvhttp.cpp
 +++ b/src/nvhttp.cpp
 @@ -1571,6 +1571,15 @@ namespace nvhttp {
@@ -19,7 +19,7 @@ index bf1bf6a6..447ca743 100644
    }
  
 diff --git a/src/rtsp.cpp b/src/rtsp.cpp
-index 91f9d244..03fc17c6 100644
+index 91f9d24..03fc17c 100644
 --- a/src/rtsp.cpp
 +++ b/src/rtsp.cpp
 @@ -634,6 +634,33 @@ namespace rtsp_stream {
@@ -77,7 +77,7 @@ index 91f9d244..03fc17c6 100644
     * @brief Send the serialized response over the active socket.
     *
 diff --git a/src/rtsp.h b/src/rtsp.h
-index c3339172..eb80a409 100644
+index c333917..eb80a40 100644
 --- a/src/rtsp.h
 +++ b/src/rtsp.h
 @@ -133,6 +133,13 @@ namespace rtsp_stream {
@@ -95,7 +95,7 @@ index c3339172..eb80a409 100644
     * @brief Runs the RTSP server loop.
     */
 diff --git a/src/stream.cpp b/src/stream.cpp
-index 6001c0d0..b907a74d 100644
+index 473292d..8d85fe8 100644
 --- a/src/stream.cpp
 +++ b/src/stream.cpp
 @@ -7,6 +7,8 @@
@@ -126,7 +126,7 @@ index 6001c0d0..b907a74d 100644
  
    /**
     * @brief Enumerates supported socket options.
-@@ -3110,6 +3124,13 @@ namespace stream {
+@@ -3169,6 +3183,13 @@ namespace stream {
        return session.client_cert;
      }
  
@@ -140,7 +140,7 @@ index 6001c0d0..b907a74d 100644
      /**
       * @brief Stop the active streaming session and prevent new packets from being queued.
       */
-@@ -3180,7 +3201,9 @@ namespace stream {
+@@ -3239,7 +3260,9 @@ namespace stream {
          platf::streaming_will_stop();
        }
  
@@ -152,7 +152,7 @@ index 6001c0d0..b907a74d 100644
  
      /**
 diff --git a/src/stream.h b/src/stream.h
-index c2b4a111..2ddfe381 100644
+index c2b4a11..2ddfe38 100644
 --- a/src/stream.h
 +++ b/src/stream.h
 @@ -95,5 +95,15 @@ namespace stream {
@@ -172,7 +172,7 @@ index c2b4a111..2ddfe381 100644
    }  // namespace session
  }  // namespace stream
 diff --git a/src/video.cpp b/src/video.cpp
-index 13ece172..1f80c352 100644
+index 13ece17..1f80c35 100644
 --- a/src/video.cpp
 +++ b/src/video.cpp
 @@ -7,6 +7,7 @@
@@ -222,7 +222,7 @@ index 13ece172..1f80c352 100644
      } else {
        safe::signal_t join_event;
 diff --git a/src/video.h b/src/video.h
-index 2092fcac..42c479ad 100644
+index 2092fca..42c479a 100644
 --- a/src/video.h
 +++ b/src/video.h
 @@ -785,6 +785,12 @@ namespace video {

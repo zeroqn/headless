@@ -1,9 +1,10 @@
 diff --git a/src/nvhttp.cpp b/src/nvhttp.cpp
+index 447ca74..3baacad 100644
 --- a/src/nvhttp.cpp
 +++ b/src/nvhttp.cpp
-@@ -8,10 +8,17 @@
- // standard includes
+@@ -9,10 +9,17 @@
  #include <algorithm>
+ #include <array>
  #include <chrono>
 +#include <condition_variable>
 +#include <deque>
@@ -19,7 +20,7 @@ diff --git a/src/nvhttp.cpp b/src/nvhttp.cpp
  #include <utility>
  
  // lib includes
-@@ -43,6 +50,144 @@
+@@ -45,6 +52,144 @@ using namespace std::literals;
  
  namespace nvhttp {
  
@@ -164,7 +165,7 @@ diff --git a/src/nvhttp.cpp b/src/nvhttp.cpp
    static constexpr std::string_view EMPTY_PROPERTY_TREE_ERROR_MSG = "Property tree is empty. Probably, control flow got interrupted by an unexpected C++ exception. This is a bug in Sunshine. Moonlight-qt will report Malformed XML (missing root element)."sv;
  
    namespace fs = std::filesystem;
-@@ -1391,14 +1536,23 @@
+@@ -1420,14 +1565,23 @@ namespace nvhttp {
  
        // We want to prepare display only if there are no active sessions at
        // the moment. This should be done before probing encoders as it could
@@ -191,7 +192,7 @@ diff --git a/src/nvhttp.cpp b/src/nvhttp.cpp
          tree.put("root.<xmlattr>.status_code", 503);
          tree.put("root.<xmlattr>.status_message", "Failed to initialize video capture/encoding. Is a display connected and turned on?");
          tree.put("root.gamesession", 0);
-@@ -1503,14 +1657,23 @@
+@@ -1532,14 +1686,23 @@ namespace nvhttp {
      if (no_active_sessions) {
        // We want to prepare display only if there are no active sessions at
        // the moment. This should be done before probing encoders as it could
