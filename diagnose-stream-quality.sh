@@ -8,6 +8,7 @@
 #   ./diagnose-stream-quality.sh --sun-bin /path/to/sunshine
 #   ./diagnose-stream-quality.sh --extra-conf 'packetsize = 200'   # add config lines
 #   ./diagnose-stream-quality.sh --resolution 3840x2160 --fps 60 --bitrate 50000   # defaults
+#   ./diagnose-stream-quality.sh --conf configs/sunshine-vulkan-4k60.conf   # use a config file
 #
 # Samples one streaming session and reports, from the host side only:
 #
@@ -32,6 +33,7 @@ resolution=${RESOLUTION:-3840x2160}
 fps=${FPS:-60}
 bitrate=${BITRATE:-50000}          # kbps requested from the host
 client=${CLIENT:-}
+conf_file=${CONF:-}
 sun_bin=${SUN_BIN:-}
 start_compositor=1
 extra_conf=()
@@ -40,6 +42,7 @@ usage() { sed -n '2,26p' "$0" | sed 's/^# \{0,1\}//'; }
 while [ $# -gt 0 ]; do
   case "$1" in
     --duration) duration=$2; shift 2 ;;
+    --conf) conf_file=$2; shift 2 ;;
     --resolution) resolution=$2; shift 2 ;;
     --fps) fps=$2; shift 2 ;;
     --bitrate) bitrate=$2; shift 2 ;;
@@ -91,16 +94,26 @@ fi
 export WAYLAND_DISPLAY=$(ls "$XDG_RUNTIME_DIR"/wayland-[0-9] 2>/dev/null | grep -v lock | head -1 | xargs -r basename)
 [ -n "$WAYLAND_DISPLAY" ] && note "wayland display: $WAYLAND_DISPLAY" || note "warning: no wayland display found"
 
+# A config file under test is copied and given this run's machine-specific paths, so the file in
+# the repository stays free of log/state paths.
 conf=$out/sunshine.conf
-if [ -f "$assets/sunshine-test.conf" ]; then
-  cp "$assets/sunshine-test.conf" "$conf"
+if [ -n "$conf_file" ]; then
+  cp "$conf_file" "$conf"
+  sed -i '/^log_path\|^file_state\|^apps_file\|^port\|^address\|^system_tray/d' "$conf"
 else
-  printf 'address = 0.0.0.0\nport = 47989\n' > "$conf"
+  if [ -f "$assets/sunshine-test.conf" ]; then
+    cp "$assets/sunshine-test.conf" "$conf"
+  else
+    printf 'address = 0.0.0.0\nport = 47989\n' > "$conf"
+  fi
 fi
-sed -i "s#^log_path.*#log_path = $out/sunshine.log#" "$conf"
-grep -q '^log_path' "$conf" || printf 'log_path = %s\n' "$out/sunshine.log" >> "$conf"
-[ -f "$assets/sunshine_state2.json" ] && sed -i "s#^file_state.*#file_state = $assets/sunshine_state2.json#" "$conf"
-[ -f "$assets/apps.json" ] && sed -i "s#^apps_file.*#apps_file = $assets/apps.json#" "$conf"
+{
+  printf 'log_path = %s\n' "$out/sunshine.log"
+  printf 'port = 47989\n'
+  printf 'system_tray = false\n'
+  [ -f "$assets/sunshine_state2.json" ] && printf 'file_state = %s\n' "$assets/sunshine_state2.json"
+  [ -f "$assets/apps.json" ] && printf 'apps_file = %s\n' "$assets/apps.json"
+} >> "$conf"
 for line in "${extra_conf[@]:-}"; do
   [ -n "$line" ] && printf '%s\n' "$line" >> "$conf"
 done
@@ -161,7 +174,7 @@ note "requested: ${resolution}@${fps}, ${bitrate} kbps"
 grep -hoE 'clientViewportWd=[0-9]+|clientViewportHt=[0-9]+|maxFPS=[0-9]+|initialBitrate=[0-9]+' \
   "$out/sunshine.log" 2>/dev/null | tail -4 | tr '\n' ' ' | sed 's/^/   client asked for: /'
 echo
-grep -hoE 'Video [0-9]+x[0-9]+@[0-9]+[^|]*|Encoder \[[^]]+\]|Found [A-Za-z0-9]+ encoder: [^|]*|Using [a-z]+ capture|packetsize limit: [0-9]+ -> [0-9]+ bytes|Streaming [0-9]+x[0-9]+' \
+grep -hoE 'Creating encoder \[[a-z0-9_]+\]|\[VAAPI\] (Using [a-z]+ rate control[^|]*|Quality level set to [0-9]+[^|]*)|\[vulkan\] Encoder quality set to [0-9]+ \([a-z]+\)[^|]*|clientViewport[WH]t=[0-9]+|packetsize limit: [0-9]+ -> [0-9]+ bytes|Found [A-Za-z0-9]+ encoder: [^|]*' \
   "$out/sunshine.log" "$out/sunshine.stdout" 2>/dev/null | sort -u | sed 's/^/   /' | head -12
 
 head_ "FEC"
