@@ -42,6 +42,7 @@ sunshine.overrideAttrs (old: {
     ./sunshine-multisession-dmabuf.patch
     ./sunshine-teardown-off-http-thread.patch
     ./sunshine-bounded-launch-prep.patch
+    ./sunshine-pairing-session-retry.patch
   ];
 
   ui = pkgs.buildNpmPackage {

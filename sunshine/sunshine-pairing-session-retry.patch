@@ -1,0 +1,109 @@
+diff --git a/src/nvhttp.cpp b/src/nvhttp.cpp
+--- a/src/nvhttp.cpp
++++ b/src/nvhttp.cpp
+@@ -634,13 +634,34 @@
+     return pair_session_insert_e::ADDED;
+   }
+ 
+-  bool evict_abandoned_pair_session(const std::string &unique_id) {
++  bool evict_abandoned_pair_session(const std::string &unique_id, const std::string &client_cert) {
+     std::scoped_lock lock {map_id_sess_mutex()};
+     const auto sess_it = map_id_sess.find(unique_id);
+-    if (sess_it == map_id_sess.end() || sess_it->second.last_phase == PAIR_PHASE::NONE) {
++    if (sess_it == map_id_sess.end()) {
+       return false;
+     }
+ 
++    if (sess_it->second.last_phase == PAIR_PHASE::NONE) {
++      // The session is still waiting for the operator's PIN. Only the client that started it
++      // may replace it: a closed PIN dialog is never reported to this host, so that client's
++      // retry is the only way out before PAIRING_SESSION_TIMEOUT. A different client that
++      // borrowed the uniqueid keeps its 409, so it cannot displace a pending approval.
++      if (sess_it->second.client.cert != client_cert) {
++        return false;
++      }
++
++      // Answer the request the abandoned dialog left parked; it would otherwise wait for the
++      // session deadline, and the retry is what needs the operator's attention now.
++      pt::ptree tree;
++      tree.put("root.paired", 0);
++      tree.put("root.<xmlattr>.status_code", 408);
++      tree.put("root.<xmlattr>.status_message", "Pairing session replaced by a new pairing attempt");
++      write_pairing_response(sess_it->second, tree);
++
++      BOOST_LOG(info) << "Replaced the pending pairing session of client "sv << unique_id
++                      << "; the client started a new pairing attempt"sv;
++    }
++
+     complete_pairing(sess_it->second, false);
+     map_id_sess.erase(sess_it);
+     return true;
+@@ -1002,10 +1023,13 @@
+     const std::string &unique_id
+   ) {
+     const bool pin_stdin = config::sunshine.flags[config::flag::PIN_STDIN];
++    // Parsed once, outside the session factory: the retry below identifies itself to the
++    // eviction check with the same certificate.
++    const auto client_cert = util::from_hex_vec(get_arg(args, "clientcert"), true);
+     auto make_session = [&]() {
+       pair_session_t fresh_sess;
+       fresh_sess.client.uniqueID = unique_id;
+-      fresh_sess.client.cert = util::from_hex_vec(get_arg(args, "clientcert"), true);
++      fresh_sess.client.cert = client_cert;
+       fresh_sess.async_insert_pin.salt = get_arg(args, "salt");
+       fresh_sess.async_insert_pin.device_name = get_arg(args, "devicename");
+       fresh_sess.async_insert_pin.address = net::addr_to_normalized_string(request->remote_endpoint().address());
+@@ -1019,9 +1043,11 @@
+ 
+     std::string pairing_id;
+     auto insert_result = insert_pair_session(make_session(), pairing_id);
+-    if (insert_result == pair_session_insert_e::ALREADY_EXISTS && evict_abandoned_pair_session(unique_id)) {
+-      // The previous handshake was abandoned mid-flight; the old session cannot resume,
+-      // so replace it with a fresh one and retry the insert once.
++    if (insert_result == pair_session_insert_e::ALREADY_EXISTS &&
++        evict_abandoned_pair_session(unique_id, client_cert)) {
++      // The previous attempt was abandoned -- mid-handshake, or at the PIN dialog, which the
++      // client never reports -- so the old session cannot resume; replace it with a fresh one
++      // and retry the insert once.
+       insert_result = insert_pair_session(make_session(), pairing_id);
+     }
+     switch (insert_result) {
+diff --git a/src/nvhttp.h b/src/nvhttp.h
+--- a/src/nvhttp.h
++++ b/src/nvhttp.h
+@@ -217,21 +217,24 @@
+   pair_session_insert_e insert_pair_session(pair_session_t sess, std::string &pairing_id);
+ 
+   /**
+-   * @brief Evict an abandoned in-progress pairing session for a client.
++   * @brief Evict an abandoned pairing session for a client so that its retry can start over.
+    *
+-   * A fresh `getservercert` request means the client abandoned its previous handshake and
+-   * started over: the phase machine never accepts `getservercert` twice for one session, so
+-   * the old handshake cannot resume. Evicting it lets the retry proceed instead of failing
+-   * with 409 until the session expires. Sessions still waiting for operator PIN approval
+-   * (`last_phase == NONE`) are left untouched, so a pending approval cannot be displaced
+-   * by a stray `getservercert`. Eviction completes the old session as failed, waking any
+-   * PIN submitter waiting on it, and orphans no live HTTP response: the response is
+-   * consumed when PIN approval advances the session past the certificate phase.
++   * A fresh `getservercert` request means the client abandoned its previous attempt: the phase
++   * machine never accepts `getservercert` twice for one session, so the old session cannot
++   * resume, and evicting it lets the retry proceed instead of failing with 409 until the
++   * session expires. A session still waiting for operator PIN approval (`last_phase == NONE`)
++   * is evicted only for the client that started it -- the retry must carry the same client
++   * certificate -- because a client that closes the PIN dialog never reports it and its retry
++   * is the only way out before the deadline; a different client reusing the uniqueid keeps its
++   * 409, so it cannot displace someone else's pending approval. Eviction completes the old
++   * session as failed, waking any PIN submitter waiting on it, and answers a response still
++   * parked for a PIN so that request does not wait for the session deadline.
+    *
+    * @param unique_id Client-provided pairing-session identifier.
+-   * @return `true` when an in-progress session was evicted.
++   * @param client_cert Certificate presented by the retrying client.
++   * @return `true` when a session was evicted.
+    */
+-  bool evict_abandoned_pair_session(const std::string &unique_id);
++  bool evict_abandoned_pair_session(const std::string &unique_id, const std::string &client_cert);
+ 
+   /**
+    * @brief Remove pairing sessions whose completion deadline has passed.
