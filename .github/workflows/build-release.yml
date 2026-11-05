@@ -264,7 +264,7 @@ jobs:
 
           for variant in mimalloc mimalloc-secure mimalloc-secure-full; do
             result="result-$variant"
-            archive="$variant-3.5.3-x86_64-linux.tar.gz"
+            archive="$variant-3.6.1-x86_64-linux.tar.gz"
             test -e "$result/lib/libmimalloc.so"
             tar -czf "$archive" -C "$(readlink -f "$result")" .
             sha256sum "$archive" >"$archive.sha256"
@@ -279,9 +279,9 @@ jobs:
         uses: actions/attest@v4
         with:
           subject-path: |
-            mimalloc-3.5.3-x86_64-linux.tar.gz
-            mimalloc-secure-3.5.3-x86_64-linux.tar.gz
-            mimalloc-secure-full-3.5.3-x86_64-linux.tar.gz
+            mimalloc-3.6.1-x86_64-linux.tar.gz
+            mimalloc-secure-3.6.1-x86_64-linux.tar.gz
+            mimalloc-secure-full-3.6.1-x86_64-linux.tar.gz
 
       - name: Prepare mimalloc attestation asset
         run: |
@@ -293,12 +293,12 @@ jobs:
         with:
           name: publish-mimalloc
           path: |
-            mimalloc-3.5.3-x86_64-linux.tar.gz
-            mimalloc-3.5.3-x86_64-linux.tar.gz.sha256
-            mimalloc-secure-3.5.3-x86_64-linux.tar.gz
-            mimalloc-secure-3.5.3-x86_64-linux.tar.gz.sha256
-            mimalloc-secure-full-3.5.3-x86_64-linux.tar.gz
-            mimalloc-secure-full-3.5.3-x86_64-linux.tar.gz.sha256
+            mimalloc-3.6.1-x86_64-linux.tar.gz
+            mimalloc-3.6.1-x86_64-linux.tar.gz.sha256
+            mimalloc-secure-3.6.1-x86_64-linux.tar.gz
+            mimalloc-secure-3.6.1-x86_64-linux.tar.gz.sha256
+            mimalloc-secure-full-3.6.1-x86_64-linux.tar.gz
+            mimalloc-secure-full-3.6.1-x86_64-linux.tar.gz.sha256
             mimalloc-main-build-x86_64-linux.sigstore.json
 
   publish:

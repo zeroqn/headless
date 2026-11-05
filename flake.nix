@@ -115,7 +115,7 @@
           zstd
         ];
 
-      mimallocVersion = "3.5.3";
+      mimallocVersion = "3.6.1";
 
       mimallocRuntimeDeps = pkgs: [ ];
 
@@ -282,7 +282,7 @@
             owner = "microsoft";
             repo = "mimalloc";
             tag = "v${mimallocVersion}";
-            hash = "sha256-GmLMWdUR2/VXJY7A8dZtwoV9FJIx0sxj8KWI4kG8IrU=";
+            hash = "sha256-9ojjdV48VSWQ6Wiycmr7Dw44cNAV5doie6oWlMe7i00=";
           };
           # nixpkgs' secureBuild only selects MI_SECURE=ON; rewrite that flag so
           # MI_SECURE=FULL is reachable for the full-secure variant.
@@ -547,10 +547,10 @@
             assert pkgs.mimalloc == pkgs.mimalloc-bin;
             assert pkgs.mimalloc-secure == pkgs.mimalloc-secure-bin;
             assert pkgs.mimalloc-secure-full == pkgs.mimalloc-secure-full-bin;
-            assert pkgs.mimalloc.version == "3.5.3";
-            assert pkgs.mimalloc-secure.version == "3.5.3";
-            assert pkgs.mimalloc-secure-full.version == "3.5.3";
-            assert pkgs.mimalloc-headless-release-build.passthru.sourceRevision == "3.5.3";
+            assert pkgs.mimalloc.version == "3.6.1";
+            assert pkgs.mimalloc-secure.version == "3.6.1";
+            assert pkgs.mimalloc-secure-full.version == "3.6.1";
+            assert pkgs.mimalloc-headless-release-build.passthru.sourceRevision == "3.6.1";
             assert pkgs.mimalloc-headless-release-build.passthru.miSecure == "OFF";
             assert pkgs.mimalloc-secure-headless-release-build.passthru.miSecure == "ON";
             assert pkgs.mimalloc-secure-full-headless-release-build.passthru.miSecure == "FULL";
