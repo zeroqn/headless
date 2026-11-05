@@ -34,7 +34,7 @@
         "x86_64-linux": {
           "name": "sunshine-main-x86_64-linux.tar.gz",
           "url": "https://github.com/zeroqn/headless/releases/download/main-build/sunshine-main-x86_64-linux.tar.gz",
-          "hash": "sha256-OqFiLy/sciEzPjhuwVgVOb3ZfcjBEAEzxsEsI3TyFV0="
+          "hash": "sha256-wWYPa7fzwuTIYQO6s8N8176lz3uBMzpSTZiT9/g4bkM="
         }
       }
     },
@@ -45,7 +45,7 @@
         "x86_64-linux": {
           "name": "sunshine-main-cuda-x86_64-linux.tar.gz",
           "url": "https://github.com/zeroqn/headless/releases/download/main-build/sunshine-main-cuda-x86_64-linux.tar.gz",
-          "hash": "sha256-MnqRrh5SEfHUMLG2Sk2BDxAi8rOUBXO7RBNom4b4mMg="
+          "hash": "sha256-jy+OrJWu56E/0dhDgGaXkCUIQhScAASZSt5GLGgRzDI="
         }
       }
     },
@@ -72,35 +72,35 @@
       }
     },
     "mimalloc": {
-      "version": "3.5.3",
-      "revision": "3.5.3",
+      "version": "3.6.1",
+      "revision": "3.6.1",
       "assets": {
         "x86_64-linux": {
-          "name": "mimalloc-3.5.3-x86_64-linux.tar.gz",
-          "url": "https://github.com/zeroqn/headless/releases/download/main-build/mimalloc-3.5.3-x86_64-linux.tar.gz",
-          "hash": "sha256-ibr7etW2G/u/NJG2tuy0lBXFTykqYGvkYMA7gmPuTRM="
+          "name": "mimalloc-3.6.1-x86_64-linux.tar.gz",
+          "url": "https://github.com/zeroqn/headless/releases/download/main-build/mimalloc-3.6.1-x86_64-linux.tar.gz",
+          "hash": "sha256-tm2yM6Jul1lexSP5jnRkKsSYErwN76YqLnr41Qdaw0s="
         }
       }
     },
     "mimalloc-secure": {
-      "version": "3.5.3",
-      "revision": "3.5.3",
+      "version": "3.6.1",
+      "revision": "3.6.1",
       "assets": {
         "x86_64-linux": {
-          "name": "mimalloc-secure-3.5.3-x86_64-linux.tar.gz",
-          "url": "https://github.com/zeroqn/headless/releases/download/main-build/mimalloc-secure-3.5.3-x86_64-linux.tar.gz",
-          "hash": "sha256-n55acGZ5H/vmzfhdzQrS4wv5SeKnpyoTleHybhfglR4="
+          "name": "mimalloc-secure-3.6.1-x86_64-linux.tar.gz",
+          "url": "https://github.com/zeroqn/headless/releases/download/main-build/mimalloc-secure-3.6.1-x86_64-linux.tar.gz",
+          "hash": "sha256-+C2cYawK77gu8yATH0P2PuUhlTI6yYtjpXfB449y4Xg="
         }
       }
     },
     "mimalloc-secure-full": {
-      "version": "3.5.3",
-      "revision": "3.5.3",
+      "version": "3.6.1",
+      "revision": "3.6.1",
       "assets": {
         "x86_64-linux": {
-          "name": "mimalloc-secure-full-3.5.3-x86_64-linux.tar.gz",
-          "url": "https://github.com/zeroqn/headless/releases/download/main-build/mimalloc-secure-full-3.5.3-x86_64-linux.tar.gz",
-          "hash": "sha256-zwntSiK1J4IK/awPvnYUIr8Jn72816gZilH8SOB+EbE="
+          "name": "mimalloc-secure-full-3.6.1-x86_64-linux.tar.gz",
+          "url": "https://github.com/zeroqn/headless/releases/download/main-build/mimalloc-secure-full-3.6.1-x86_64-linux.tar.gz",
+          "hash": "sha256-TGKKzSUMhJx7ss7z7akv2iaetaAvrkHCAvqIZS6K3bo="
         }
       }
     },
