@@ -1,8 +1,8 @@
 diff --git a/cmake/compile_definitions/common.cmake b/cmake/compile_definitions/common.cmake
-index f3b9390..c2c9e31 100644
+index 8219564..c2ac39e 100644
 --- a/cmake/compile_definitions/common.cmake
 +++ b/cmake/compile_definitions/common.cmake
-@@ -177,6 +177,8 @@ set(SUNSHINE_TARGET_FILES
+@@ -178,6 +178,8 @@ set(SUNSHINE_TARGET_FILES
          "${CMAKE_SOURCE_DIR}/src/input.h"
          "${CMAKE_SOURCE_DIR}/src/audio.cpp"
          "${CMAKE_SOURCE_DIR}/src/audio.h"
@@ -12,10 +12,10 @@ index f3b9390..c2c9e31 100644
          "${CMAKE_SOURCE_DIR}/src/platform/permissions.cpp"
          "${CMAKE_SOURCE_DIR}/src/platform/permissions.h"
 diff --git a/cmake/compile_definitions/linux.cmake b/cmake/compile_definitions/linux.cmake
-index a842678..e51a8fc 100644
+index 1188d40..7b58eb8 100644
 --- a/cmake/compile_definitions/linux.cmake
 +++ b/cmake/compile_definitions/linux.cmake
-@@ -272,6 +272,21 @@ if(PIPEWIRE_FOUND)
+@@ -289,6 +289,21 @@ if(PIPEWIRE_FOUND)
              "${CMAKE_SOURCE_DIR}/src/platform/linux/pipewire.cpp")
  endif()
  
@@ -38,10 +38,10 @@ index a842678..e51a8fc 100644
  set(PORTAL_FOUND OFF)
  if(PIPEWIRE_FOUND AND GIO_FOUND AND ${SUNSHINE_ENABLE_PORTAL})
 diff --git a/docs/configuration.md b/docs/configuration.md
-index cf76e36..312dcd1 100644
+index afba89c..99706c2 100644
 --- a/docs/configuration.md
 +++ b/docs/configuration.md
-@@ -913,6 +913,37 @@ consent prompt for directory ACLs, so the Web UI shows setup steps for correctin
+@@ -914,6 +914,37 @@ consent prompt for directory ACLs, so the Web UI shows setup steps for correctin
      </tr>
  </table>
  
@@ -159,10 +159,10 @@ index a670925..568e9c6 100644
 +  int write_mic_pcm(const std::int16_t *samples, std::size_t frame_count);
  }  // namespace audio
 diff --git a/src/config.cpp b/src/config.cpp
-index 1e4300b..4023ea0 100644
+index 81c7965..f71b69d 100644
 --- a/src/config.cpp
 +++ b/src/config.cpp
-@@ -829,6 +829,7 @@ namespace config {
+@@ -806,6 +806,7 @@ namespace config {
      true,  // stream audio
      true,  // install_steam_drivers
      false,  // external_audio
@@ -170,7 +170,7 @@ index 1e4300b..4023ea0 100644
    };
  
    /**
-@@ -1774,6 +1775,7 @@ namespace config {
+@@ -1815,6 +1816,7 @@ namespace config {
      bool_f(vars, "stream_audio", audio.stream);
      bool_f(vars, "install_steam_audio_drivers", audio.install_steam_drivers);
      bool_f(vars, "external_audio", audio.external_audio);
@@ -179,10 +179,10 @@ index 1e4300b..4023ea0 100644
      string_restricted_f(vars, "origin_web_ui_allowed", nvhttp.origin_web_ui_allowed, {"pc"sv, "lan"sv, "wan"sv});
  
 diff --git a/src/config.h b/src/config.h
-index d13ddfd..b82deb2 100644
+index f1a8491..7d5257c 100644
 --- a/src/config.h
 +++ b/src/config.h
-@@ -241,6 +241,7 @@ namespace config {
+@@ -244,6 +244,7 @@ namespace config {
      bool stream;  ///< Enable audio streaming to clients
      bool install_steam_drivers;  ///< Install Steam audio drivers for enhanced compatibility
      bool external_audio;  ///< Windows capture-only mode; an external router owns endpoint defaults and formats.
@@ -814,10 +814,10 @@ index 0000000..d70fee4
 +  };
 +}  // namespace mic_mixer
 diff --git a/src/platform/common.h b/src/platform/common.h
-index 62961d7..9155dc4 100644
+index de03e7c..f1292ea 100644
 --- a/src/platform/common.h
 +++ b/src/platform/common.h
-@@ -876,6 +876,38 @@ namespace platf {
+@@ -922,6 +922,38 @@ namespace platf {
       */
      virtual std::optional<sink_t> sink_info() = 0;
  
@@ -1498,10 +1498,10 @@ index 0000000..2bcbe35
 +  write(const std::int16_t *samples, std::size_t frame_count);
 +}  // namespace platf::mic_redirect
 diff --git a/src/rtsp.cpp b/src/rtsp.cpp
-index 7125373..91f9d24 100644
+index c3e6b37..69b93e8 100644
 --- a/src/rtsp.cpp
 +++ b/src/rtsp.cpp
-@@ -881,6 +881,11 @@ namespace rtsp_stream {
+@@ -900,6 +900,11 @@ namespace rtsp_stream {
      uint32_t encryption_flags_supported = SS_ENC_CONTROL_V2 | SS_ENC_AUDIO;
      uint32_t encryption_flags_requested = SS_ENC_CONTROL_V2;
  
@@ -1513,7 +1513,7 @@ index 7125373..91f9d24 100644
      // Determine the encryption desired for this remote endpoint
      if (auto encryption_mode = net::encryption_mode_for_address(sock.remote_endpoint().address()); encryption_mode != config::ENCRYPTION_MODE_NEVER) {
        // Advertise support for video encryption if it's not disabled
-@@ -889,7 +894,12 @@ namespace rtsp_stream {
+@@ -908,7 +913,12 @@ namespace rtsp_stream {
        // If it's mandatory, also request it to enable use if the client
        // didn't explicitly opt in, but it otherwise has support.
        if (encryption_mode == config::ENCRYPTION_MODE_MANDATORY) {
@@ -1527,9 +1527,9 @@ index 7125373..91f9d24 100644
        }
      }
  
-@@ -909,6 +919,16 @@ namespace rtsp_stream {
-       ss << "a=rtpmap:98 AV1/90000"sv << std::endl;
-     }
+@@ -922,6 +932,16 @@ namespace rtsp_stream {
+ 
+     ss << describe_video_codecs(nvhttp::get_codec_mode_flags());
  
 +    // Advertise the microphone stream so clients that read the session description
 +    // know the host accepts one before they attempt SETUP.
@@ -1544,7 +1544,7 @@ index 7125373..91f9d24 100644
      if (!session.surround_params.empty()) {
        // If we have our own surround parameters, advertise them twice first
        ss << "a=fmtp:97 surround-params="sv << session.surround_params << std::endl;
-@@ -978,6 +998,16 @@ namespace rtsp_stream {
+@@ -991,6 +1011,16 @@ namespace rtsp_stream {
        port = net::map_port(stream::VIDEO_STREAM_PORT);
      } else if (type == "control"sv) {
        port = net::map_port(stream::CONTROL_PORT);
@@ -1562,10 +1562,10 @@ index 7125373..91f9d24 100644
        cmd_not_found(sock, session, std::move(req));
  
 diff --git a/src/rtsp.h b/src/rtsp.h
-index 108c881..c333917 100644
+index bfbd7be..2a03a90 100644
 --- a/src/rtsp.h
 +++ b/src/rtsp.h
-@@ -93,6 +93,8 @@ namespace rtsp_stream {
+@@ -102,6 +102,8 @@ namespace rtsp_stream {
      bool continuous_audio;  ///< Whether audio packets continue during silence.
      bool enable_hdr;  ///< Whether HDR streaming is requested.
      bool enable_sops;  ///< Whether sequence output protection is requested.
@@ -1575,7 +1575,7 @@ index 108c881..c333917 100644
  
      std::optional<crypto::cipher::gcm_t> rtsp_cipher;  ///< AES-GCM cipher used once encrypted RTSP is negotiated.
 diff --git a/src/stream.cpp b/src/stream.cpp
-index 21c5c2b..473292d 100644
+index a222b40..b5cbe4f 100644
 --- a/src/stream.cpp
 +++ b/src/stream.cpp
 @@ -8,9 +8,13 @@
@@ -1592,7 +1592,7 @@ index 21c5c2b..473292d 100644
  
  // lib includes
  #include <boost/endian/arithmetic.hpp>
-@@ -29,6 +33,7 @@ extern "C" {
+@@ -26,6 +30,7 @@
  #include "globals.h"
  #include "input.h"
  #include "logging.h"
@@ -1600,7 +1600,7 @@ index 21c5c2b..473292d 100644
  #include "network.h"
  #include "platform/common.h"
  #include "process.h"
-@@ -321,6 +326,13 @@ namespace stream {
+@@ -318,6 +323,13 @@ namespace stream {
      AUDIO_FEC_HEADER fecHeader;  ///< Audio forward-error-correction header.
    };
  
@@ -1614,7 +1614,7 @@ index 21c5c2b..473292d 100644
  #pragma pack(pop)
  
    static_assert(sizeof(video_packet_raw_t) == sizeof(RTP_PACKET) + 4 + sizeof(NV_VIDEO_PACKET));
-@@ -494,7 +506,60 @@ namespace stream {
+@@ -491,7 +503,60 @@ namespace stream {
      udp::socket video_sock {io_context};  ///< UDP socket bound for video packet transmission.
      udp::socket audio_sock {io_context};  ///< UDP socket bound for audio packet transmission.
  
@@ -1675,7 +1675,7 @@ index 21c5c2b..473292d 100644
    };
  
    /**
-@@ -545,6 +610,9 @@ namespace stream {
+@@ -542,6 +607,9 @@ namespace stream {
  
        audio_fec_packet_t fec_packet;  ///< Reusable packet header for audio forward-error-correction shards.
        std::unique_ptr<platf::deinit_t> qos;  ///< Lifetime guard for audio-socket QoS configuration.
@@ -1685,7 +1685,7 @@ index 21c5c2b..473292d 100644
      } audio;  ///< Audio capture configuration for the stream..
  
      struct {
-@@ -636,6 +704,833 @@ namespace stream {
+@@ -633,6 +701,833 @@ namespace stream {
     * @param ctx Native context object used by the operation or callback.
     * @return 0 on success; nonzero when broadcast setup fails.
     */
@@ -2519,7 +2519,7 @@ index 21c5c2b..473292d 100644
    int start_broadcast(broadcast_ctx_t &ctx);
    /**
     * @brief Stop broadcast processing.
-@@ -2090,6 +2985,7 @@ namespace stream {
+@@ -2098,6 +2993,7 @@ namespace stream {
      ctx.control_thread = std::jthread {controlBroadcastThread, &ctx.control_server};
  
      ctx.recv_thread = std::jthread {recvThread, std::ref(ctx)};
@@ -2527,7 +2527,7 @@ index 21c5c2b..473292d 100644
  
      return 0;
    }
-@@ -2111,10 +3007,15 @@ namespace stream {
+@@ -2119,10 +3015,15 @@ namespace stream {
  
      ctx.message_queue_queue->stop();
      ctx.io_context.stop();
@@ -2543,7 +2543,7 @@ index 21c5c2b..473292d 100644
      video_packets.reset();
      audio_packets.reset();
  
-@@ -2126,6 +3027,8 @@ namespace stream {
+@@ -2134,6 +3035,8 @@ namespace stream {
      ctx.audio_thread.join();
      BOOST_LOG(debug) << "Waiting for main control thread to end..."sv;
      ctx.control_thread.join();
@@ -2552,7 +2552,7 @@ index 21c5c2b..473292d 100644
      BOOST_LOG(debug) << "All broadcasting threads ended"sv;
  
      broadcast_shutdown_event->reset();
-@@ -2302,6 +3205,14 @@ namespace stream {
+@@ -2310,6 +3213,14 @@ namespace stream {
        session.videoThread.join();
        BOOST_LOG(debug) << "Waiting for audio to end..."sv;
        session.audioThread.join();
@@ -2567,7 +2567,7 @@ index 21c5c2b..473292d 100644
        BOOST_LOG(debug) << "Waiting for control to end..."sv;
        session.controlEnd.view();
        // Reset input on session stop to avoid stuck repeated keys
-@@ -2363,6 +3274,12 @@ namespace stream {
+@@ -2371,6 +3282,12 @@ namespace stream {
        session.audioThread = std::jthread {audioThread, &session};
        session.videoThread = std::jthread {videoThread, &session};
  
@@ -2580,7 +2580,7 @@ index 21c5c2b..473292d 100644
        session.state.store(state_e::RUNNING, std::memory_order_relaxed);
  
        // If this is the first session, invoke the platform callbacks
-@@ -2444,6 +3361,7 @@ namespace stream {
+@@ -2452,6 +3369,7 @@ namespace stream {
        session->audio.avRiKeyId = util::endian::big(*(std::uint32_t *) launch_session.iv.data());
        session->audio.sequenceNumber = 0;
        session->audio.timestamp = 0;

@@ -125,10 +125,10 @@ index c5d412c..d531d0a 100644
            pa_mainloop_quit(loop.get(), 0);
            worker.join();
 diff --git a/src/rtsp.cpp b/src/rtsp.cpp
-index 03fc17c..0b7aa38 100644
+index 5f2342f..475f56b 100644
 --- a/src/rtsp.cpp
 +++ b/src/rtsp.cpp
-@@ -647,15 +647,17 @@ namespace rtsp_stream {
+@@ -666,15 +666,17 @@ namespace rtsp_stream {
      int clear_by_identity(std::string_view identity) {
        auto lg = _session_slots.lock();
        int cleared = 0;
@@ -151,7 +151,7 @@ index 03fc17c..0b7aa38 100644
          }
        }
        return cleared;
-@@ -755,7 +757,7 @@ namespace rtsp_stream {
+@@ -774,7 +776,7 @@ namespace rtsp_stream {
    int terminate_sessions_by_identity(std::string_view identity) {
      const int cleared = server.clear_by_identity(identity);
      if (cleared > 0) {
@@ -161,10 +161,10 @@ index 03fc17c..0b7aa38 100644
      return cleared;
    }
 diff --git a/src/stream.cpp b/src/stream.cpp
-index 8d85fe8..73372ce 100644
+index 0c06a05..739346e 100644
 --- a/src/stream.cpp
 +++ b/src/stream.cpp
-@@ -3194,7 +3194,15 @@ namespace stream {
+@@ -3202,7 +3202,15 @@ namespace stream {
       * @brief Stop the active streaming session and prevent new packets from being queued.
       */
      void stop(session_t &session) {

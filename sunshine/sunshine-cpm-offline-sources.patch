@@ -1,0 +1,25 @@
+diff --git a/cmake/cpm/CPM.cmake b/cmake/cpm/CPM.cmake
+index b7075fb..5a3099c 100644
+--- a/cmake/cpm/CPM.cmake
++++ b/cmake/cpm/CPM.cmake
+@@ -1216,16 +1216,10 @@ function(cpm_fetch_package PACKAGE DOWNLOAD_ONLY populated)
+   if(NOT ${lower_case_name}_POPULATED)
+     if(${CMAKE_VERSION} VERSION_GREATER_EQUAL "3.30.3")
+       if(DOWNLOAD_ONLY)
+-        # MakeAvailable will call add_subdirectory internally which is not what we want when
+-        # DOWNLOAD_ONLY is set. Populate will only download the dependency without adding it to the
+-        # build
+-        FetchContent_Populate(
+-          ${PACKAGE}
+-          SOURCE_DIR "${CPM_FETCHCONTENT_BASE_DIR}/${lower_case_name}-src"
+-          BINARY_DIR "${CPM_FETCHCONTENT_BASE_DIR}/${lower_case_name}-build"
+-          SUBBUILD_DIR "${CPM_FETCHCONTENT_BASE_DIR}/${lower_case_name}-subbuild"
+-          ${ARGN}
+-        )
++        # Populate in the standard form rather than the direct one so that a
++        # caller-provided FETCHCONTENT_SOURCE_DIR_<NAME> may override the
++        # download; the direct form ignores that override.
++        FetchContent_Populate(${PACKAGE})
+       else()
+         FetchContent_MakeAvailable(${PACKAGE})
+       endif()

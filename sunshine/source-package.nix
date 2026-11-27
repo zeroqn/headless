@@ -22,12 +22,71 @@ let
     ps.setuptools
   ]);
   src = pkgs.fetchgit {
-    url = "https://github.com/LizardByte/Sunshine.git";
-    rev = "c10125088da1f61e72fe1c65faa996a297490d36";
-    hash = "sha256-8lk/9lYuBgUC+cysho8zDSoB7acape9sMksdCvbn2k4=";
+    url = "https://github.com/SunshineStream/Sunshine.git";
+    rev = "b12662e562b319f942f459404fe766a79748bb6a";
+    hash = "sha256-jvr1ULNj/Vi1CDkTNqRCjnZeFJNiVHI8srCtBd7yLv4=";
     fetchSubmodules = true;
   };
-  version = "2026.11.02.vulkan";
+  version = "2026.11.27.vulkan";
+
+  # Upstream resolves its C/C++ dependencies through CPM/FetchContent while
+  # configuring, which needs the network. Every checkout it asks for is pinned
+  # here and handed to cmake as FETCHCONTENT_SOURCE_DIR_<name>, so cmake uses
+  # the store path instead of downloading it.
+  cpmSources = {
+    # The microphone stream flags live in the vendored Moonlight common library.
+    moonlight-common-c = pkgs.applyPatches {
+      name = "moonlight-common-c-b4ee1ce";
+      src = pkgs.fetchgit {
+        url = "https://github.com/moonlight-stream/moonlight-common-c.git";
+        rev = "b4ee1cea3d19e13c0b37c26585e6b1ee174effcb";
+        hash = "sha256-l4UMlfY523DhcuMDOHnYVYLRs2PxPrj7J2fiMveGvXk=";
+        fetchSubmodules = true;
+      };
+      patches = [ ./sunshine-mic-common.patch ];
+    };
+    simple_web_server = pkgs.fetchgit {
+      url = "https://github.com/LizardByte-infrastructure/Simple-Web-Server.git";
+      rev = "546895a93a29062bb178367b46c7afb72da9881e";
+      hash = "sha256-sIuZUqpK8eiPs1wIlE8hJgtynEoYpLxMaWxQGviifME=";
+    };
+    libdisplaydevice = pkgs.fetchgit {
+      url = "https://github.com/LizardByte/libdisplaydevice.git";
+      rev = "a2afc0430d44223c25a2ebc598000f78b338aa52";
+      hash = "sha256-uiJ/IoVKcu7RR+p1IPOXBykpLMKoyZ+bMCLH0EHuGjw=";
+    };
+    libvirtualhid = pkgs.fetchgit {
+      url = "https://github.com/LizardByte/libvirtualhid.git";
+      rev = "dd8153df338c6fb399ea4a048fa97b4c536f12a0";
+      hash = "sha256-om2LzLvW77msWNF/aSO9m/hkY7DB/DwjwLdopdbjmP0=";
+      fetchSubmodules = true;
+    };
+    glad = pkgs.fetchgit {
+      url = "https://github.com/Dav1dde/glad.git";
+      rev = "73db193f853e2ee079bf3ca8a64aa2eaf6459043";
+      hash = "sha256-aWqqOtNbaWMIKN1KAnXfTbDOgcZ87XaXwVGVgePzLDE=";
+    };
+    tray = pkgs.fetchgit {
+      url = "https://github.com/LizardByte/tray.git";
+      rev = "c7b35bb6e3d32b5ce03ce9ef14c25cc178927b2e";
+      hash = "sha256-BOIzv/dKYoMqMJoWAPSy98Dmq27V8oudMeviHCTf+DQ=";
+    };
+    wayland_protocols = pkgs.fetchgit {
+      url = "https://github.com/LizardByte-infrastructure/wayland-protocols.git";
+      rev = "3eab2dccf4bfdd85c16d312a6c8c8fbc2a6e73a8";
+      hash = "sha256-LukbpVpSbwLQ6L6thqSULBn/z4Z6wf8I45/y8/+LU9E=";
+    };
+    wlr_protocols = pkgs.fetchgit {
+      url = "https://github.com/LizardByte-infrastructure/wlr-protocols.git";
+      rev = "1106a4a1c57562ddd438c547da4c0d6dc150d624";
+      hash = "sha256-xM+VjQ0ngYm3NLhAGKY6qrm2FFngUvpVe5Q0FudgD4g=";
+    };
+    plasma_wayland_protocols = pkgs.fetchgit {
+      url = "https://github.com/KDE/plasma-wayland-protocols.git";
+      rev = "c5ac4db818f4a575a6ccfe0065b73ecfaba6e93e";
+      hash = "sha256-2Eqt0+24NEZSk3lEtvpkN5RGZ86EKi7/o4qovXk1hTw=";
+    };
+  };
 in
 
 sunshine.overrideAttrs (old: {
@@ -37,19 +96,19 @@ sunshine.overrideAttrs (old: {
   inherit src version;
 
   patches = (old.patches or [ ]) ++ [
-    ./sunshine-mic-common.patch
     ./sunshine-mic.patch
     ./sunshine-multisession-dmabuf.patch
     ./sunshine-teardown-off-http-thread.patch
     ./sunshine-bounded-launch-prep.patch
     ./sunshine-pairing-session-retry.patch
+    ./sunshine-cpm-offline-sources.patch
   ];
 
   ui = pkgs.buildNpmPackage {
     inherit src version;
 
     pname = "sunshine-ui";
-    npmDepsHash = "sha256-I908PQ4CSiJEbOmi75/0GWnm6iZIUWEsGsmV3XnuN5U=";
+    npmDepsHash = "sha256-RO9VtNC++Sj/4zaBnd8c2G1ii2Ai1PbpnEl4S9lJUCE=";
     nodejs = pkgs.nodejs_24;
 
     # keep npm dependency hashing tied to this repo's checked-in lockfile
@@ -114,7 +173,11 @@ sunshine.overrideAttrs (old: {
     (pkgs.lib.cmakeBool "SYSTEMD_FOUND" true)
     (pkgs.lib.cmakeFeature "SYSTEMD_USER_UNIT_INSTALL_DIR" "lib/systemd/user")
     (pkgs.lib.cmakeFeature "SYSTEMD_MODULES_LOAD_DIR" "lib/modules-load.d")
-  ];
+  ]
+  # hand every CPM/FetchContent package the pinned checkout instead of a URL
+  ++ map (
+    name: pkgs.lib.cmakeFeature "FETCHCONTENT_SOURCE_DIR_${pkgs.lib.toUpper name}" "${cpmSources.${name}}"
+  ) (builtins.attrNames cpmSources);
 
   qtWrapperArgs = [
     "--chdir"

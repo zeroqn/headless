@@ -1,8 +1,8 @@
 diff --git a/src/nvhttp.cpp b/src/nvhttp.cpp
-index bf1bf6a..447ca74 100644
+index 45730c5..a8f98d5 100644
 --- a/src/nvhttp.cpp
 +++ b/src/nvhttp.cpp
-@@ -1571,6 +1571,15 @@ namespace nvhttp {
+@@ -1582,6 +1582,15 @@ namespace nvhttp {
      );
      tree.put("root.resume", 1);
  
@@ -19,10 +19,10 @@ index bf1bf6a..447ca74 100644
    }
  
 diff --git a/src/rtsp.cpp b/src/rtsp.cpp
-index 91f9d24..03fc17c 100644
+index 69b93e8..5f2342f 100644
 --- a/src/rtsp.cpp
 +++ b/src/rtsp.cpp
-@@ -634,6 +634,33 @@ namespace rtsp_stream {
+@@ -653,6 +653,33 @@ namespace rtsp_stream {
        }
      }
  
@@ -56,7 +56,7 @@ index 91f9d24..03fc17c 100644
      /**
       * @brief Removes the provided session from the set of sessions.
       * @param session The session to remove.
-@@ -720,6 +747,19 @@ namespace rtsp_stream {
+@@ -739,6 +766,19 @@ namespace rtsp_stream {
      input::terminate_gamepads(cert);
    }
  
@@ -77,10 +77,10 @@ index 91f9d24..03fc17c 100644
     * @brief Send the serialized response over the active socket.
     *
 diff --git a/src/rtsp.h b/src/rtsp.h
-index c333917..eb80a40 100644
+index 2a03a90..dd00cbf 100644
 --- a/src/rtsp.h
 +++ b/src/rtsp.h
-@@ -133,6 +133,13 @@ namespace rtsp_stream {
+@@ -142,6 +142,13 @@ namespace rtsp_stream {
     */
    void terminate_sessions_by_cert(std::string_view cert);
  
@@ -95,7 +95,7 @@ index c333917..eb80a40 100644
     * @brief Runs the RTSP server loop.
     */
 diff --git a/src/stream.cpp b/src/stream.cpp
-index 473292d..8d85fe8 100644
+index b5cbe4f..0c06a05 100644
 --- a/src/stream.cpp
 +++ b/src/stream.cpp
 @@ -7,6 +7,8 @@
@@ -107,7 +107,7 @@ index 473292d..8d85fe8 100644
  #include <future>
  #include <mutex>
  #include <optional>
-@@ -89,6 +91,18 @@ using asio::ip::udp;
+@@ -86,6 +88,18 @@ using asio::ip::udp;
  using namespace std::literals;
  
  namespace stream {
@@ -126,7 +126,7 @@ index 473292d..8d85fe8 100644
  
    /**
     * @brief Enumerates supported socket options.
-@@ -3169,6 +3183,13 @@ namespace stream {
+@@ -3177,6 +3191,13 @@ namespace stream {
        return session.client_cert;
      }
  
@@ -140,7 +140,7 @@ index 473292d..8d85fe8 100644
      /**
       * @brief Stop the active streaming session and prevent new packets from being queued.
       */
-@@ -3239,7 +3260,9 @@ namespace stream {
+@@ -3247,7 +3268,9 @@ namespace stream {
          platf::streaming_will_stop();
        }
  
@@ -172,7 +172,7 @@ index c2b4a11..2ddfe38 100644
    }  // namespace session
  }  // namespace stream
 diff --git a/src/video.cpp b/src/video.cpp
-index 13ece17..1f80c35 100644
+index fb40162..772c87b 100644
 --- a/src/video.cpp
 +++ b/src/video.cpp
 @@ -7,6 +7,7 @@
@@ -180,52 +180,52 @@ index 13ece17..1f80c35 100644
  #include <atomic>
  #include <bitset>
 +#include <cstdlib>
+ #include <deque>
  #include <list>
  #include <thread>
- #include <utility>
-@@ -1291,7 +1292,7 @@ namespace video {
-       {},  // capabilities
+@@ -1468,7 +1469,7 @@ namespace video {
      },
+     {},  // H.263+
      // RC buffer size will be set in platform code if supported
 -    LIMITED_GOP_SIZE | PARALLEL_ENCODING | NO_RC_BUF_LIMIT
 +    LIMITED_GOP_SIZE | NO_RC_BUF_LIMIT  // no PARALLEL_ENCODING: see capture()
    };
  
    #ifdef SUNSHINE_BUILD_VULKAN
-@@ -1364,7 +1365,7 @@ namespace video {
-       "h264_vulkan"s,
-       {},  // capabilities
+@@ -1543,7 +1544,7 @@ namespace video {
      },
+     {},  // MPEG-2
+     {},  // H.263+
 -    LIMITED_GOP_SIZE | PARALLEL_ENCODING
 +    LIMITED_GOP_SIZE  // no PARALLEL_ENCODING: see capture()
    };
    #endif  // SUNSHINE_BUILD_VULKAN
  #endif  // linux
-@@ -2973,7 +2974,18 @@ namespace video {
-     auto idr_events = mail->event<bool>(mail::idr);
+@@ -3277,7 +3278,18 @@ namespace video {
+     config = resolve_dynamic_range(*encoder, config);
  
      idr_events->raise(true);
--    if (chosen_encoder->flags & PARALLEL_ENCODING) {
+-    if (encoder->flags & PARALLEL_ENCODING) {
 +    // Hardware encoders import the captured frame into their own GPU context. Running two of them
 +    // concurrently on one shared captured buffer hangs the host GPU on virtio-gpu/venus stacks, so
 +    // the parallel-capture encoders (vaapi, vulkan) are serialized onto the single sync thread.
 +    // SUNSHINE_PARALLEL_ENCODE=1 restores the previous threading for testing.
 +    const char *parallel_env = std::getenv("SUNSHINE_PARALLEL_ENCODE");
 +    const bool force_parallel = parallel_env && *parallel_env && *parallel_env != '0';
-+    const bool use_parallel = force_parallel || (chosen_encoder->flags & PARALLEL_ENCODING);
++    const bool use_parallel = force_parallel || (encoder->flags & PARALLEL_ENCODING);
 +    BOOST_LOG(info) << "Capture/encode path for this session: "sv
 +                    << (use_parallel ? "parallel (per-session thread)"sv : "serialized (shared capture thread)"sv)
-+                    << ", encoder ["sv << chosen_encoder->name << "]"sv
++                    << ", encoder ["sv << encoder->name << "]"sv
 +                    << (force_parallel ? ", forced by SUNSHINE_PARALLEL_ENCODE"sv : ""sv);
 +    if (use_parallel) {
-       capture_async(std::move(mail), config, channel_data);
+       capture_async(std::move(mail), config, *encoder, channel_data);
      } else {
        safe::signal_t join_event;
 diff --git a/src/video.h b/src/video.h
-index 2092fca..42c479a 100644
+index 64bac6a..7828187 100644
 --- a/src/video.h
 +++ b/src/video.h
-@@ -785,6 +785,12 @@ namespace video {
+@@ -929,6 +929,12 @@ namespace video {
      if (config.framerateX100 > 0) {
        return framerateX100_to_rational(config.framerateX100);
      }

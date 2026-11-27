@@ -1,8 +1,8 @@
 diff --git a/src/nvhttp.cpp b/src/nvhttp.cpp
-index 3baacad..1a23825 100644
+index 0083b12..8ee3615 100644
 --- a/src/nvhttp.cpp
 +++ b/src/nvhttp.cpp
-@@ -779,13 +779,34 @@ namespace nvhttp {
+@@ -783,13 +783,34 @@ namespace nvhttp {
      return pair_session_insert_e::ADDED;
    }
  
@@ -39,7 +39,7 @@ index 3baacad..1a23825 100644
      complete_pairing(sess_it->second, false);
      map_id_sess.erase(sess_it);
      return true;
-@@ -1147,10 +1168,13 @@ namespace nvhttp {
+@@ -1151,10 +1172,13 @@ namespace nvhttp {
      const std::string &unique_id
    ) {
      const bool pin_stdin = config::sunshine.flags[config::flag::PIN_STDIN];
@@ -54,7 +54,7 @@ index 3baacad..1a23825 100644
        fresh_sess.async_insert_pin.salt = get_arg(args, "salt");
        fresh_sess.async_insert_pin.device_name = get_arg(args, "devicename");
        fresh_sess.async_insert_pin.address = net::addr_to_normalized_string(request->remote_endpoint().address());
-@@ -1164,9 +1188,11 @@ namespace nvhttp {
+@@ -1168,9 +1192,11 @@ namespace nvhttp {
  
      std::string pairing_id;
      auto insert_result = insert_pair_session(make_session(), pairing_id);
