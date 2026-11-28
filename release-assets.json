@@ -28,24 +28,24 @@
       }
     },
     "sunshine": {
-      "version": "2026.11.02.vulkan",
-      "revision": "c10125088da1f61e72fe1c65faa996a297490d36",
+      "version": "2026.11.27.vulkan",
+      "revision": "b12662e562b319f942f459404fe766a79748bb6a",
       "assets": {
         "x86_64-linux": {
           "name": "sunshine-main-x86_64-linux.tar.gz",
           "url": "https://github.com/zeroqn/headless/releases/download/main-build/sunshine-main-x86_64-linux.tar.gz",
-          "hash": "sha256-VCJaalOTZNx5Z0liPjxCUbcRl/++eAem+0ZfuHGuZAo="
+          "hash": "sha256-aPk4UuqAlS74ZD8IjWY0vlKaNRIDmAE1J6sEmVu7Jbc="
         }
       }
     },
     "sunshine-cuda": {
-      "version": "2026.11.02.vulkan",
-      "revision": "c10125088da1f61e72fe1c65faa996a297490d36",
+      "version": "2026.11.27.vulkan",
+      "revision": "b12662e562b319f942f459404fe766a79748bb6a",
       "assets": {
         "x86_64-linux": {
           "name": "sunshine-main-cuda-x86_64-linux.tar.gz",
           "url": "https://github.com/zeroqn/headless/releases/download/main-build/sunshine-main-cuda-x86_64-linux.tar.gz",
-          "hash": "sha256-qpKTH5aLrhyg81Ii5sXS06gF24Zg19yKf7sa4V+ccf4="
+          "hash": "sha256-quqGYAKyHB7BjEZ2VsVmw53S5+pLeum/raCLbB6z1O0="
         }
       }
     },
