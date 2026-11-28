@@ -54,6 +54,13 @@ let
       url = "https://github.com/LizardByte/libdisplaydevice.git";
       rev = "a2afc0430d44223c25a2ebc598000f78b338aa52";
       hash = "sha256-uiJ/IoVKcu7RR+p1IPOXBykpLMKoyZ+bMCLH0EHuGjw=";
+      # Upstream's submodules (third-party/dockle, third-party/lizardbyte-common)
+      # are only wired up when libdisplaydevice is the top-level project
+      # (BUILD_DOCS/tests); sunshine consumes it as a FetchContent subproject,
+      # where neither is referenced. fetchgit's default here is
+      # fetchSubmodules = true, which would make the fixed-output hash cover a
+      # recursive checkout this pin does not match.
+      fetchSubmodules = false;
     };
     libvirtualhid = pkgs.fetchgit {
       url = "https://github.com/LizardByte/libvirtualhid.git";
@@ -70,6 +77,9 @@ let
       url = "https://github.com/LizardByte/tray.git";
       rev = "c7b35bb6e3d32b5ce03ce9ef14c25cc178927b2e";
       hash = "sha256-BOIzv/dKYoMqMJoWAPSy98Dmq27V8oudMeviHCTf+DQ=";
+      # Same as libdisplaydevice: the dockle/lizardbyte-common submodules are
+      # only used when tray is the top-level CMake project.
+      fetchSubmodules = false;
     };
     wayland_protocols = pkgs.fetchgit {
       url = "https://github.com/LizardByte-infrastructure/wayland-protocols.git";
